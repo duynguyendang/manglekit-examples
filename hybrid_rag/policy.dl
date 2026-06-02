@@ -6,14 +6,13 @@
 % ==========================================
 
 % Declare predicates for static analysis
+% Note: halt/2, triple/3, meta/2 are declared in std.dl (auto-loaded).
 Decl requires(Req, Capability).
 Decl memory_hit(DocID).
 Decl user(User).
-Decl halt(Req, Reason).
-Decl triple(S, P, O).
-Decl meta(Key, Value).
 Decl type(Entity, Value).
 Decl allow(Req).
+Decl unauthorized_hit(Req, User).
 
 % 1. Requirement
 requires(Req, "memory") :- type(Req, "query").
@@ -21,10 +20,15 @@ requires(Req, "memory") :- type(Req, "query").
 % Extract user from metadata
 user(User) :- meta("user", User).
 
-% Extract memory hits from metadata (new format with indexed keys)
+% Extract memory hits from metadata (indexed keys, one fact per hit)
 memory_hit(DocID) :- meta("memory_hit_0", DocID).
 memory_hit(DocID) :- meta("memory_hit_1", DocID).
 memory_hit(DocID) :- meta("memory_hit_2", DocID).
+memory_hit(DocID) :- meta("memory_hit_3", DocID).
+memory_hit(DocID) :- meta("memory_hit_4", DocID).
+memory_hit(DocID) :- meta("memory_hit_5", DocID).
+memory_hit(DocID) :- meta("memory_hit_6", DocID).
+memory_hit(DocID) :- meta("memory_hit_7", DocID).
 
 % ==========================================
 % Transitive Access Control Rules
@@ -44,15 +48,21 @@ can_access(User, Doc) :-
     owns(Group, Project),
     contains(Project, Doc).
 
-% Allow access if user can access all memory hits
-allow(Req) :-
+% Unauthorized: there exists a memory_hit the user cannot access
+% This must be true for ALL hits to pass; a single miss triggers halt.
+unauthorized_hit(Req, User) :-
     type(Req, "query"),
     user(User),
     memory_hit(DocID),
-    can_access(User, DocID).
+    !can_access(User, DocID).
 
-% Access Control Rule (HALT)
-% Block requests that are not explicitly allowed
-halt(Req, "Access Denied: User not authorized for document context") :-
+% Block if any memory_hit is unauthorized
+halt(Req, "Access Denied: User not authorized for at least one document in context") :-
     type(Req, "query"),
-    !allow(Req).
+    unauthorized_hit(Req, _).
+
+% Allow only if no memory_hit is unauthorized
+allow(Req) :-
+    type(Req, "query"),
+    user(User),
+    !unauthorized_hit(Req, User).

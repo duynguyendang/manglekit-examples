@@ -3,7 +3,7 @@ actions:
     type: "llm"
     provider: "google"
     options:
-      model: "gemini-3-flash-preview"
+      model: "gemini-2.5-flash"
       prompt: "You are Mangle. Answer briefly."
 policy:
   path: "./config_driven_bot/policy.dl"

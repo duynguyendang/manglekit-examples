@@ -45,8 +45,8 @@ func (m *MockLLM) Generate(ctx context.Context, prompt string, opts ...core.Gene
 		Usage: map[string]int{"prompt": 10, "completion": 5},
 	}, nil
 }
-func (m *MockLLM) Stream(ctx context.Context, prompt string) (<-chan string, error) {
-	ch := make(chan string)
+func (m *MockLLM) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
+	ch := make(chan core.StreamChunk)
 	close(ch)
 	return ch, nil
 }
@@ -55,11 +55,15 @@ func (m *MockLLM) Stream(ctx context.Context, prompt string) (<-chan string, err
 type CustomHybridMemory struct {
 	*sdk.HybridMemory
 	vectorStore core.VectorStore
+	docLabels   map[string]string // document security labels from access_graph.nq
 }
+
+// maxMemoryHits is the maximum number of memory hits to track in policy metadata.
+// Must match the number of memory_hit_N rules in policy.dl.
+const maxMemoryHits = 8
 
 // RecallWithFacts implements the optional interface to return metadata with security labels
 func (m *CustomHybridMemory) RecallWithFacts(ctx context.Context, query string) (string, map[string]any, error) {
-	// 1. Vector Search
 	docIDs, err := m.vectorStore.Search(ctx, query, 3)
 	if err != nil {
 		return "", nil, err
@@ -67,6 +71,7 @@ func (m *CustomHybridMemory) RecallWithFacts(ctx context.Context, query string) 
 
 	var contextParts []string
 	var hits []string
+	seenLabels := make(map[string]bool)
 	var securityLabels []string
 
 	for _, id := range docIDs {
@@ -75,23 +80,20 @@ func (m *CustomHybridMemory) RecallWithFacts(ctx context.Context, query string) 
 			contextParts = append(contextParts, fmt.Sprintf("[DocID:%s] %s", id, content))
 			hits = append(hits, id)
 
-			// Feature 4.1: Security Label Propagation
-			// Inject security labels based on document ID
-			switch id {
-			case "doc_project_x", "doc_project_x_spec":
-				securityLabels = append(securityLabels, "TOP_SECRET")
-			case "doc_project_y":
-				securityLabels = append(securityLabels, "CONFIDENTIAL")
-			case "doc_remote_work":
-				securityLabels = append(securityLabels, "PUBLIC")
+			// Derive security labels from the knowledge graph (access_graph.nq has_label triples)
+			if label, ok := m.docLabels[id]; ok && !seenLabels[label] {
+				securityLabels = append(securityLabels, label)
+				seenLabels[label] = true
 			}
 		}
 	}
 
 	meta := make(map[string]any)
-	// Feature 1: Inject memory_hit as individual facts for each document
-	// This allows the policy to check access for each retrieved document
+	// Inject one memory_hit_N fact per document so the policy can check access for each
 	for i, hit := range hits {
+		if i >= maxMemoryHits {
+			break
+		}
 		meta[fmt.Sprintf("memory_hit_%d", i)] = hit
 	}
 	if len(hits) > 0 {
@@ -127,8 +129,8 @@ func (m *PIIMockLLM) Generate(ctx context.Context, prompt string, opts ...core.G
 		Usage: map[string]int{"prompt": 10, "completion": 5},
 	}, nil
 }
-func (m *PIIMockLLM) Stream(ctx context.Context, prompt string) (<-chan string, error) {
-	ch := make(chan string)
+func (m *PIIMockLLM) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
+	ch := make(chan core.StreamChunk)
 	close(ch)
 	return ch, nil
 }
@@ -154,10 +156,10 @@ func main() {
 	}
 
 	// Vector Store
-	vecStore := vector.NewSimpleStore(embedder) // Using SimpleStore as HNSW is internal/unavailable or same interface
+	vecStore := vector.NewSimpleStore(embedder)
 
 	// Load Knowledge Base
-	kbData, err := os.ReadFile("examples/hybrid_rag/data/knowledge.json")
+	kbData, err := os.ReadFile("hybrid_rag/data/knowledge.json")
 	if err != nil {
 		log.Fatalf("Failed to read knowledge.json: %v", err)
 	}
@@ -171,17 +173,43 @@ func main() {
 		}
 	}
 
-	// Hybrid Memory
+	// Load Document Security Labels from access_graph.nq has_label triples
+	docLabels := make(map[string]string)
+	graphData, err := os.ReadFile("hybrid_rag/data/access_graph.nq")
+	if err != nil {
+		log.Fatalf("Failed to read access_graph.nq: %v", err)
+	}
+	lines := strings.Split(string(graphData), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 3 {
+			s := strings.Trim(parts[0], "<>")
+			p := strings.Trim(parts[1], "<>")
+			o := strings.Trim(parts[2], "\"")
+			if p == "has_label" {
+				docLabels[s] = o
+			}
+		}
+	}
+
+	// Hybrid Memory (with security labels from graph)
 	baseMem := sdk.NewHybridMemory(&core.NopStore{}, vecStore, embedder)
 	customMem := &CustomHybridMemory{
 		HybridMemory: baseMem,
 		vectorStore:  vecStore,
+		docLabels:    docLabels,
 	}
 
 	// 2. Configure Client
+	// FailModeClosed (default): block execution on policy/guard failures.
+	// FailModeOpen: allow execution to proceed with a warning.
 	client, err := sdk.NewClient(ctx,
 		sdk.WithMemory(customMem),
-		sdk.WithFailMode(sdk.FailModeOpen), // Allow system errors, block alignment errors
+		sdk.WithFailMode(sdk.FailModeOpen),
 	)
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
@@ -189,7 +217,7 @@ func main() {
 	client.SetLLM(&MockLLM{})
 
 	// Load Policy
-	policyData, err := os.ReadFile("examples/hybrid_rag/policy.dl")
+	policyData, err := os.ReadFile("hybrid_rag/policy.dl")
 	if err != nil {
 		log.Fatalf("Failed to read policy.dl: %v", err)
 	}
@@ -197,13 +225,8 @@ func main() {
 		log.Fatalf("Failed to load policy: %v", err)
 	}
 
-	// Load Graph Facts
-	graphData, err := os.ReadFile("examples/hybrid_rag/data/access_graph.nq")
-	if err != nil {
-		log.Fatalf("Failed to read access_graph.nq: %v", err)
-	}
+	// Load Graph Facts (for transitive access control — member_of, owns, contains, has_label)
 	var facts []string
-	lines := strings.Split(string(graphData), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {

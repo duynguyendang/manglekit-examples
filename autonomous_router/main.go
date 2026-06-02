@@ -27,25 +27,21 @@ func main() {
 	client := manglekit.Must(manglekit.NewClient(ctx, manglekit.WithBlueprintPath("autonomous_router/blueprint.dl")))
 
 	// 2. Register Actions
-
-	// Action 1: SQL Generator (demonstrates RETRY)
-	gen := &SQLGenerator{}
-	client.RegisterAction("generate_sql", client.Supervise(gen))
-
-	// Action 2: Router (demonstrates ROUTE)
+	client.RegisterAction("generate_sql", client.Supervise(&SQLGenerator{}))
 	client.RegisterAction("classify", client.Supervise(&RouterAction{}))
-
-	// Action 3: VIP Agent
 	client.RegisterAction("vip_agent", client.Supervise(&VIPAction{}))
 
-	// 3. RunLoop - Scenario 1: Retry
-	fmt.Println("--- Scenario 1: Retry (Bad SQL) ---")
-	// Execute via client.Action proxy
+	// 3. Run Scenarios
+
+	// Scenario 1: SQL Generator
+	// The blueprint defines a correction(Req, Msg) rule for bad SQL.
+	// The SQLGenerator action checks env.Metadata for feedback from a prior retry
+	// and adjusts its output accordingly.
+	fmt.Println("--- Scenario 1: Generate SQL ---")
 	res, err := client.Action("generate_sql").Execute(ctx, core.NewEnvelope(nil))
 	if err != nil {
-		fmt.Printf("RunLoop failed: %v\n", err)
+		fmt.Printf("Execute failed: %v\n", err)
 	} else {
-		// Extract SQL from payload
 		if out, ok := res.Payload.(SQLOutput); ok {
 			fmt.Printf("Result: %s\n", out.SQL)
 		} else {
@@ -53,15 +49,32 @@ func main() {
 		}
 	}
 
-	// 3. RunLoop - Scenario 2: Route
-	fmt.Println("\n--- Scenario 2: Route (Gold Tier) ---")
-	// Note: We use Input struct which maps to payload.tier
+	// Scenario 2: Gold Tier → route to VIP Agent
+	// The blueprint has: route("vip_agent") :- payload.tier(Req, "gold").
+	// The classify action passes through; post-execution steering detects
+	// the route decision and forwards to vip_agent which returns the VIP message.
+	fmt.Println("\n--- Scenario 2: Gold Tier → VIP Agent ---")
 	res, err = client.Action("classify").Execute(ctx, core.NewEnvelope(Input{Tier: "gold"}))
 	if err != nil {
-		fmt.Printf("RunLoop failed: %v\n", err)
+		fmt.Printf("Execute failed: %v\n", err)
 	} else {
 		if val, ok := res.Payload.(string); ok {
-			fmt.Printf("Result: %s\n", val)
+			fmt.Printf("VIP Agent delivered: %s\n", val)
+		} else if val, ok := res.Payload.(Input); ok {
+			fmt.Printf("Routing did not fire; passed through as: tier=%s\n", val.Tier)
+		} else {
+			fmt.Printf("Result: %+v\n", res.Payload)
+		}
+	}
+
+	// Scenario 3: Silver tier (no VIP routing rule)
+	fmt.Println("\n--- Scenario 3: Silver Tier (no routing) ---")
+	res, err = client.Action("classify").Execute(ctx, core.NewEnvelope(Input{Tier: "silver"}))
+	if err != nil {
+		fmt.Printf("Execute failed: %v\n", err)
+	} else {
+		if val, ok := res.Payload.(Input); ok {
+			fmt.Printf("Passed through (no routing): tier=%s\n", val.Tier)
 		} else {
 			fmt.Printf("Result: %+v\n", res.Payload)
 		}

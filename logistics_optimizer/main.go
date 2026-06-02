@@ -46,8 +46,7 @@ func (a *JsonLLMAction) Execute(ctx context.Context, env core.Envelope) (core.En
 	// 2. Parse Payload (expecting string that is valid JSON)
 	strPayload, ok := out.Payload.(string)
 	if !ok {
-		// Maybe it's already parsed?
-		return out, nil
+		return out, fmt.Errorf("llm output is not a string payload (got %T): the Datalog validator requires a JSON string to parse", out.Payload)
 	}
 
 	// Sanitize output (remove markdown blocks if present)
