@@ -7,6 +7,7 @@
 *.dll
 *.so
 *.dylib
+main
 
 # Test binary, built with `go test -c`
 *.test
@@ -23,6 +24,14 @@ profile.cov
 # Go workspace file
 go.work
 go.work.sum
+
+# Compiled binaries inside example subdirectories (from `go build ./<name>/`)
+*/*.test
+*/*.exe
+*/*.exe~
+*/*.dll
+*/*.so
+*/*.dylib
 
 # env file
 .env

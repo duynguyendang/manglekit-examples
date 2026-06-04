@@ -1,15 +1,11 @@
 # manglekit-examples
 
-Example applications demonstrating [Manglekit](https://github.com/duynguyendang/manglekit) — an AI governance framework with policy-based guardrails.
-
-## ⚠️ Security
-
-This repository historically contained a populated `GOOGLE_API_KEY` in `.env` that has since been removed. **If you previously cloned this repo, rotate your Google API key in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) immediately.** The `.env` file is gitignored; the example now ships with only a placeholder.
+Example applications demonstrating [Manglekit](https://github.com/duynguyendang/manglekit) — a Sovereign Neuro-Symbolic Logic Kernel for Go with policy-based guardrails, cognitive loops, and neuro-symbolic reasoning.
 
 ## Prerequisites
 
 - Go 1.24+
-- A Google AI API key (`GOOGLE_API_KEY`) for any example that uses an LLM provider. Without it, `hybrid_rag` falls back to a mock embedder (no real API calls), `config_driven_bot` and `logistics_optimizer` require it to run.
+- A Google AI API key (`GOOGLE_API_KEY`) for examples marked "Requires API key"
 
 ## Setup
 
@@ -17,29 +13,62 @@ This repository historically contained a populated `GOOGLE_API_KEY` in `.env` th
 # Clone with the manglekit SDK as a sibling directory
 git clone <this-repo> manglekit-examples
 git clone <manglekit-repo> manglekit
-```
 
-```bash
-# Copy and populate the environment file
-cp .env.example .env
-# Edit .env and set GOOGLE_API_KEY=your-key
-```
-
-```bash
 # From the manglekit-examples root
 cd manglekit-examples
+
+# (Optional) For examples that use an LLM
+export GOOGLE_API_KEY=your-key
 ```
 
-## Examples
+## Learning Path
 
-| Example | Description | Run command |
+Examples are ordered by complexity. Start with the basics and work your way up.
+
+### Beginner
+
+| Example | Description | API Key | Run |
+|---|---|---|---|
+| **code_to_policy_extractor** | Dynamic Architecture Linter enforcing Clean Architecture rules on PRs | No | `go run ./code_to_policy_extractor/` |
+
+### Intermediate
+
+| Example | Description | API Key | Run |
+|---|---|---|---|
+| **knowledge_graph_reasoning** | Load N-Triples knowledge graphs, define transitive Datalog rules, query with audit trails | No | `go run ./knowledge_graph_reasoning/` |
+| **goal_based_planning** | Datalog-driven action planning with `client.Plan()` and `ExecutePlan()` | No | `go run ./goal_based_planning/` |
+| **devops_policy_gate** | CI/CD security gates blocking dangerous Terraform/K8s operations | No | `go run ./devops_policy_gate/` |
+| **session_recovery** | Durable session state persistence and crash recovery | No | `go run ./session_recovery/` |
+
+### Advanced
+
+| Example | Description | API Key | Run |
+|---|---|---|---|
+| **mcp_tool_integration** | Model Context Protocol server integration with policy-gated tool execution | No | `go run ./mcp_tool_integration/` |
+| **hybrid_rag** | Multi-tenant RAG with transitive access control, PII detection, and security tainting | No (mocks) | `go run ./hybrid_rag/` |
+| **ooda_document_generator** | Full 5-phase OODA loop with self-correction and Datalog policies | No | `go run ./ooda_document_generator/` |
+
+### LLM-Powered (Requires API Key)
+
+| Example | Description | API Key | Run |
+|---|---|---|---|
+| **genkit_middleware_showcase** | Genkit 1.7 middleware composition (Retry, Fallback, Tool Approval) | Yes | `go run ./genkit_middleware_showcase/` |
+| **math_solver** | Small model reasoning: decompose math problems into verified micro-steps | Yes | `go run ./math_solver/` |
+
+## Manglekit Features Demonstrated
+
+| Feature | Package | Examples |
 |---|---|---|
-| **autonomous_router** | Supervised agent with retry correction and tier-based routing (gold → VIP agent). No external deps. | `go run ./autonomous_router/` |
-| **config_driven_bot** | LLM chat agent configured via YAML. Uses Google Gemini. | `go run ./config_driven_bot/` |
-| **infrastructure_copilot** | Kubernetes safety guardrail — blocks delete on critical pods and writes during peak hours. No external deps. | `go run ./infrastructure_copilot/` |
-| **logistics_optimizer** | Seating arrangement solver with LLM-generated JSON + Datalog constraint validation. Uses Google Gemini. | `go run ./logistics_optimizer/` |
-| **hybrid_rag** | RAG pipeline with transitive access control, PII detection via retry, and security taint propagation. Mock LLM — no API key needed for basic testing. | `go run ./hybrid_rag/` |
-| **bdd_policies** | Gherkin-based governance policy definitions (`.feature` files). Documentation only; run via manglekit CLI. | See [README](bdd_policies/README.md) |
+| Datalog policy engine | `core.Evaluator` | All examples |
+| Knowledge graphs | `adapters/knowledge` | knowledge_graph_reasoning, hybrid_rag |
+| Action planning | `sdk.Plan()` | goal_based_planning |
+| OODA cognitive loop | `sdk/ooda` | ooda_document_generator |
+| MCP integration | `adapters/mcp` | mcp_tool_integration |
+| Hybrid memory (RAG) | `sdk.HybridMemory` | hybrid_rag |
+| Genkit middleware | `adapters/ai` | genkit_middleware_showcase |
+| Session state recovery | `core.StateProvider` | session_recovery |
+| Supervisor (zero-trust) | `client.Supervise()` | hybrid_rag, mcp_tool_integration |
+| Function adapter | `adapters/func` | hybrid_rag |
 
 ## Testing
 
@@ -47,23 +76,22 @@ cd manglekit-examples
 go test ./...
 ```
 
-The test suite includes smoke tests for each example that verify:
-- Policies load without syntax errors
-- Client construction succeeds
-- Key positive and negative scenarios behave as expected
+All examples include tests. No external API keys required for tests — mocks are used where needed.
 
-No external API keys required for smoke tests.
-
-## Repo structure
+## Repo Structure
 
 ```
 manglekit-examples/
-  autonomous_router/    -- Retry & route pattern
-  bdd_policies/         -- Gherkin policy files
-  config_driven_bot/    -- YAML-driven LLM agent
-  hybrid_rag/           -- RAG + transitive access control
-  infrastructure_copilot/ -- K8s safety guardrails
-  logistics_optimizer/  -- LLM + Datalog constraint solving
+  code_to_policy_extractor/    -- Dynamic Architecture Linter
+  devops_policy_gate/          -- CI/CD Security Gates
+  genkit_middleware_showcase/  -- Genkit 1.7 middleware composition
+  goal_based_planning/         -- Datalog-driven action planning
+  hybrid_rag/                  -- Multi-Tenant RAG with access control
+  knowledge_graph_reasoning/   -- N-Triples knowledge graph reasoning
+  math_solver/                 -- Small model long reasoning (math)
+  mcp_tool_integration/        -- Model Context Protocol integration
+  ooda_document_generator/     -- Full 5-phase OODA loop
+  session_recovery/            -- Durable state persistence
 ```
 
 Each example has its own `package main` and can be run independently.
@@ -71,4 +99,3 @@ Each example has its own `package main` and can be run independently.
 ## See also
 
 - [manglekit](https://github.com/duynguyendang/manglekit) — the SDK
-- [BDD Policy README](bdd_policies/README.md) — Gherkin policy authoring guide
