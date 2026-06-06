@@ -1,0 +1,37 @@
+# Multi-Tenant Code Repository Access Graph
+# Demonstrates transitive access control: User → Team → Repo → Module
+
+# Team Membership
+<alice> <member_of> <team_alpha> .
+<bob> <member_of> <team_beta> .
+<charlie> <member_of> <team_gamma> .
+<diana> <member_of> <team_alpha> .
+<eve> <member_of> <team_beta> .
+
+# Team Contributions to Repos
+<team_alpha> <contributor_to> <repo_backend> .
+<team_beta> <contributor_to> <repo_frontend> .
+<team_gamma> <contributor_to> <repo_infra> .
+<team_alpha> <contributor_to> <repo_shared> .
+
+# Repos Containing Modules
+<repo_backend> <contains_module> <module_auth> .
+<repo_backend> <contains_module> <module_payment> .
+<repo_backend> <contains_module> <module_user> .
+<repo_frontend> <contains_module> <module_ui> .
+<repo_frontend> <contains_module> <module_dashboard> .
+<repo_infra> <contains_module> <module_deploy> .
+<repo_infra> <contains_module> <module_monitoring> .
+<repo_shared> <contains_module> <module_utils> .
+<repo_shared> <contains_module> <module_config> .
+
+# Module Security Labels
+<module_auth> <has_label> "confidential" .
+<module_payment> <has_label> "restricted" .
+<module_user> <has_label> "internal" .
+<module_ui> <has_label> "public" .
+<module_dashboard> <has_label> "internal" .
+<module_deploy> <has_label> "confidential" .
+<module_monitoring> <has_label> "internal" .
+<module_utils> <has_label> "public" .
+<module_config> <has_label> "internal" .

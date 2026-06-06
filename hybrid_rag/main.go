@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	function "github.com/duynguyendang/manglekit/adapters/func"
+	"github.com/duynguyendang/manglekit/adapters/knowledge"
 	"github.com/duynguyendang/manglekit/adapters/vector"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/providers/google"
@@ -175,23 +176,24 @@ func main() {
 
 	// Load Document Security Labels from access_graph.nq has_label triples
 	docLabels := make(map[string]string)
-	graphData, err := os.ReadFile("hybrid_rag/data/access_graph.nq")
+	graphFile, err := os.Open("hybrid_rag/data/access_graph.nq")
 	if err != nil {
 		log.Fatalf("Failed to read access_graph.nq: %v", err)
 	}
-	lines := strings.Split(string(graphData), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) >= 3 {
-			s := strings.Trim(parts[0], "<>")
-			p := strings.Trim(parts[1], "<>")
-			o := strings.Trim(parts[2], "\"")
-			if p == "has_label" {
-				docLabels[s] = o
+	graphFacts, err := knowledge.ParseNTriples(graphFile)
+	graphFile.Close()
+	if err != nil {
+		log.Fatalf("Failed to parse access_graph.nq: %v", err)
+	}
+	// Extract has_label triples for security labels
+	for _, fact := range graphFacts {
+		if strings.Contains(fact, "has_label") {
+			// Parse triple("sub", "pred", "obj") format
+			parts := strings.SplitN(fact, "\", \"", 3)
+			if len(parts) >= 3 {
+				sub := strings.TrimPrefix(parts[0], "triple(\"")
+				obj := strings.TrimSuffix(parts[2], "\")")
+				docLabels[sub] = obj
 			}
 		}
 	}
@@ -226,22 +228,7 @@ func main() {
 	}
 
 	// Load Graph Facts (for transitive access control — member_of, owns, contains, has_label)
-	var facts []string
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) >= 3 {
-			s := strings.Trim(parts[0], "<>")
-			p := strings.Trim(parts[1], "<>")
-			o := strings.Trim(parts[2], "\"")
-			fact := fmt.Sprintf("triple(\"%s\", \"%s\", \"%s\")", s, p, o)
-			facts = append(facts, fact)
-		}
-	}
-	if err := client.LoadFacts(facts); err != nil {
+	if err := client.LoadFacts(graphFacts); err != nil {
 		log.Fatalf("Failed to load graph facts: %v", err)
 	}
 
@@ -252,7 +239,7 @@ func main() {
 	safeAct := client.Supervise(act)
 	client.RegisterAction("simulate_llm", safeAct)
 
-	// 3. Run Scenarios
+	// 3. Run Original Scenarios
 	fmt.Println("\n=== Feature 1: Complex Transitive Access Control ===")
 	runScenario(ctx, client, "Scenario A (Alice - Research Group)", "user_alice", "What are the launch codes for Project X?", false)
 	runScenario(ctx, client, "Scenario B (Charlie - Junior Group)", "user_charlie", "What are the launch codes for Project X?", true)
@@ -262,9 +249,26 @@ func main() {
 	runPIIScenario(ctx, client, "Scenario D (PII Leak)", "user_alice", true, true)
 	runPIIScenario(ctx, client, "Scenario E (Safe Response)", "user_alice", false, false)
 
-	fmt.Println("\n=== Feature 4: Information Flow Control (Security Tainting) ===")
+	fmt.Println("\n=== Feature 3: Information Flow Control (Security Tainting) ===")
 	runEgressScenario(ctx, client, "Scenario F (TOP_SECRET to public)", "user_alice", "public_client", true)
 	runEgressScenario(ctx, client, "Scenario G (TOP_SECRET to internal)", "user_diana", "internal_client", false)
+
+	// 4. Load Code Repository Documents into Vector Store
+	fmt.Println("\n=== Feature 4: Multi-Tenant Code Repository Search ===")
+	codeDocsData, err := os.ReadFile("hybrid_rag/data/code_repo_docs.json")
+	if err != nil {
+		log.Fatalf("Failed to read code_repo_docs.json: %v", err)
+	}
+	var codeDocs []Document
+	if err := json.Unmarshal(codeDocsData, &codeDocs); err != nil {
+		log.Fatalf("Failed to parse code_repo_docs.json: %v", err)
+	}
+	for _, doc := range codeDocs {
+		if err := vecStore.Upsert(ctx, doc.ID, doc.Content); err != nil {
+			log.Fatalf("Failed to upsert code doc %s: %v", doc.ID, err)
+		}
+	}
+	runMultiTenantScenarios(ctx, client)
 }
 
 func runScenario(ctx context.Context, client *sdk.Client, name, user, query string, expectBlock bool) {
@@ -384,3 +388,78 @@ func (m *MockEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]floa
 	return res, nil
 }
 func (m *MockEmbedder) Dimension() int { return 2 }
+
+// ============================================
+// Multi-Tenant Code Repository Search
+// ============================================
+
+func runMultiTenantScenarios(ctx context.Context, client *sdk.Client) {
+	// Load multi-tenant code repository knowledge graph
+	codeGraphFile, err := os.Open("hybrid_rag/data/code_repo_graph.nq")
+	if err != nil {
+		log.Fatalf("Failed to read code_repo_graph.nq: %v", err)
+	}
+	codeFacts, err := knowledge.ParseNTriples(codeGraphFile)
+	codeGraphFile.Close()
+	if err != nil {
+		log.Fatalf("Failed to parse code_repo_graph.nq: %v", err)
+	}
+	if err := client.LoadFacts(codeFacts); err != nil {
+		log.Fatalf("Failed to load code graph facts: %v", err)
+	}
+
+	// Load multi-tenant access policy
+	codePolicyData, err := os.ReadFile("hybrid_rag/code_access_policy.dl")
+	if err != nil {
+		log.Fatalf("Failed to read code_access_policy.dl: %v", err)
+	}
+	if err := client.Engine().LoadPolicy(ctx, string(codePolicyData)); err != nil {
+		log.Fatalf("Failed to load code access policy: %v", err)
+	}
+	fmt.Println("✅ Loaded multi-tenant code repository access policy")
+
+	// Test transitive access control scenarios
+	// Team Alpha: alice, diana → repo_backend (auth, payment, user), repo_shared (utils, config)
+	// Team Beta: bob, eve → repo_frontend (ui, dashboard)
+	// Team Gamma: charlie → repo_infra (deploy, monitoring)
+
+	runCodeSearchScenario(ctx, client, "Alice (team_alpha) searches module_auth", "alice", "module_auth", true)
+	runCodeSearchScenario(ctx, client, "Alice (team_alpha) searches module_ui", "alice", "module_ui", false)
+	runCodeSearchScenario(ctx, client, "Bob (team_beta) searches module_ui", "bob", "module_ui", true)
+	runCodeSearchScenario(ctx, client, "Bob (team_beta) searches module_auth", "bob", "module_auth", false)
+	runCodeSearchScenario(ctx, client, "Charlie (team_gamma) searches module_deploy", "charlie", "module_deploy", true)
+	runCodeSearchScenario(ctx, client, "Charlie (team_gamma) searches module_payment", "charlie", "module_payment", false)
+	runCodeSearchScenario(ctx, client, "Diana (team_alpha) searches module_utils", "diana", "module_utils", true)
+	runCodeSearchScenario(ctx, client, "Eve (team_beta) searches module_dashboard", "eve", "module_dashboard", true)
+}
+
+func runCodeSearchScenario(ctx context.Context, client *sdk.Client, name, user, module string, expectAccess bool) {
+	fmt.Printf("\n--- %s ---\n", name)
+
+	// Create an envelope with the metadata needed by the Datalog policy
+	env := core.NewEnvelope(map[string]string{
+		"query_module": module,
+	})
+	env.Metadata["query_user"] = user
+	env.Metadata["target_module"] = module
+
+	// Use Assess directly against the policy engine
+	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "search_code"}, env)
+	if err != nil {
+		if !expectAccess {
+			if strings.Contains(err.Error(), "Access denied") {
+				fmt.Printf("PASS: Access correctly denied for %s\n", user)
+			} else {
+				fmt.Printf("INFO: Request blocked: %v\n", err)
+			}
+		} else {
+			fmt.Printf("FAIL: %s should have access to %s: %v\n", user, module, err)
+		}
+	} else {
+		if expectAccess {
+			fmt.Printf("PASS: %s successfully accessed %s\n", user, module)
+		} else {
+			fmt.Printf("FAIL: %s should NOT have access to %s\n", user, module)
+		}
+	}
+}

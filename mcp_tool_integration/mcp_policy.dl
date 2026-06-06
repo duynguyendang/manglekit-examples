@@ -1,0 +1,24 @@
+% ============================================================
+% MCP Tool Integration Policy
+% ============================================================
+% This policy governs MCP (Model Context Protocol) tool execution.
+% It enforces path-based access control and operation restrictions
+% on tools discovered from MCP servers.
+% ============================================================
+
+% --- Sensitive Path Protection ---
+
+% Block write operations to sensitive system paths (/etc, /sys, /proc)
+halt("Req", "Write operations to sensitive system paths are forbidden") :-
+    meta("mcp_operation", "write"),
+    meta("mcp_path_sensitive", "true").
+
+% Block any operation targeting a restricted path
+halt("Req", "Access to restricted paths is blocked") :-
+    meta("mcp_path_restricted", "true").
+
+% --- Operation Restrictions ---
+
+% Block all delete operations (safety net)
+halt("Req", "Delete operations are not permitted via MCP tools") :-
+    meta("mcp_operation", "delete").

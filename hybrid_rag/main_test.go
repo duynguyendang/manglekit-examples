@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit"
+	"github.com/duynguyendang/manglekit/adapters/knowledge"
 	"github.com/duynguyendang/manglekit/sdk"
 )
 
@@ -35,21 +36,9 @@ func TestTransitiveAccessControl(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read access_graph.nq: %v", err)
 	}
-	var facts []string
-	lines := strings.Split(string(graphData), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) >= 3 {
-			s := strings.Trim(parts[0], "<>")
-			p := strings.Trim(parts[1], "<>")
-			o := strings.Trim(parts[2], "\"")
-			fact := `triple("` + s + `", "` + p + `", "` + o + `")`
-			facts = append(facts, fact)
-		}
+	facts, err := knowledge.ParseNTriples(strings.NewReader(string(graphData)))
+	if err != nil {
+		t.Fatalf("Failed to parse access_graph.nq: %v", err)
 	}
 	if err := client.Engine().LoadFacts(facts); err != nil {
 		t.Fatalf("Failed to load graph facts: %v", err)
@@ -101,24 +90,13 @@ func TestSupervisedActionExecution(t *testing.T) {
 		t.Fatalf("Failed to load policy: %v", err)
 	}
 
-	// Load access graph facts
 	graphData, err := os.ReadFile(filepath.Join(root, "hybrid_rag/data/access_graph.nq"))
 	if err != nil {
 		t.Fatalf("Failed to read access_graph.nq: %v", err)
 	}
-	var facts []string
-	for _, line := range strings.Split(string(graphData), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) >= 3 {
-			s := strings.Trim(parts[0], "<>")
-			p := strings.Trim(parts[1], "<>")
-			o := strings.Trim(parts[2], "\"")
-			facts = append(facts, `triple("`+s+`", "`+p+`", "`+o+`")`)
-		}
+	facts, err := knowledge.ParseNTriples(strings.NewReader(string(graphData)))
+	if err != nil {
+		t.Fatalf("Failed to parse access_graph.nq: %v", err)
 	}
 	if err := client.Engine().LoadFacts(facts); err != nil {
 		t.Fatalf("Failed to load graph facts: %v", err)

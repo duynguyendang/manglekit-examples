@@ -1,0 +1,21 @@
+% Verified reasoning: symbolic verification of constraint satisfaction.
+%
+% The solver proposes (x, y); the verifier checks against a lookup table
+% of valid solutions. Engine().Query("violation(Reason)") derives any
+% remaining violations. The retry loop feeds violations back until the
+% symbolic layer certifies zero violations.
+
+Decl solution(Var, Value).
+Decl valid(Var, Value).
+Decl violation(Reason).
+
+% Only one valid solution: x=7, y=3 (satisfies x+y=10, x>0, y>0)
+valid("x", 7).
+valid("y", 3).
+
+% A proposed value violates if it doesn't match the valid solution.
+violation("x != 7") :- solution("x", X), !valid("x", X).
+violation("y != 3") :- solution("y", Y), !valid("y", Y).
+
+% Certified correct when no violations exist.
+certified(Req) :- action_operation(Req, "solve"), !violation(_).

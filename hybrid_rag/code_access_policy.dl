@@ -1,0 +1,33 @@
+% ============================================
+% Multi-Tenant Code Repository Access Policy
+% ============================================
+% Enforces transitive access control:
+% User → Team → Repo → Module
+%
+% Knowledge Graph (loaded as triple facts):
+%   triple(User, "member_of", Team)
+%   triple(Team, "contributor_to", Repo)
+%   triple(Repo, "contains_module", Module)
+%   triple(Module, "has_label", Label)
+% ============================================
+
+% Transitive access: User can access Module if:
+% - User is a member of a Team
+% - Team is a contributor to a Repo
+% - Repo contains the Module
+can_access(User, Module) :-
+    triple(User, "member_of", Team),
+    triple(Team, "contributor_to", Repo),
+    triple(Repo, "contains_module", Module).
+
+% Enforcement: Block if user cannot access the target module
+halt("Req", "Access denied: user cannot access this module") :-
+    action_operation("Req", "search_code"),
+    meta("query_user", User),
+    meta("target_module", Module),
+    !can_access(User, Module).
+
+% Allow if no halt triggered
+allow("Req") :-
+    action_operation("Req", "search_code"),
+    !halt("Req", _).

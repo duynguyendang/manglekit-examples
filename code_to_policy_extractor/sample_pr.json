@@ -1,0 +1,39 @@
+{
+  "pr_id": "PR-1234",
+  "title": "Add user authentication feature",
+  "author": "developer1",
+  "files": [
+    {
+      "path": "controllers/auth_controller.go",
+      "imports": [
+        "usecases/auth_usecase"
+      ],
+      "added_lines": 45,
+      "deleted_lines": 0
+    },
+    {
+      "path": "usecases/auth_usecase.go",
+      "imports": [
+        "domain/user",
+        "domain/repositories",
+        "gateways/jwt_gateway"
+      ],
+      "added_lines": 120,
+      "deleted_lines": 0
+    },
+    {
+      "path": "domain/user.go",
+      "imports": [],
+      "added_lines": 30,
+      "deleted_lines": 0
+    },
+    {
+      "path": "gateways/jwt_gateway.go",
+      "imports": [
+        "domain/user"
+      ],
+      "added_lines": 80,
+      "deleted_lines": 0
+    }
+  ]
+}

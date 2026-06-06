@@ -1,0 +1,38 @@
+[
+  {
+    "id": "module_auth",
+    "content": "Authentication module: Handles user login, JWT token generation, OAuth2 flows, and session management. Uses bcrypt for password hashing."
+  },
+  {
+    "id": "module_payment",
+    "content": "Payment processing module: Integrates with Stripe and PayPal. Handles refunds, subscriptions, and PCI-compliant card tokenization."
+  },
+  {
+    "id": "module_user",
+    "content": "User management module: CRUD operations for user profiles, preferences, and account settings. Includes role-based access control."
+  },
+  {
+    "id": "module_ui",
+    "content": "UI components library: React components for forms, buttons, modals, and responsive layouts. Includes accessibility features."
+  },
+  {
+    "id": "module_dashboard",
+    "content": "Dashboard module: Real-time analytics, charts, and data visualization for monitoring KPIs and user engagement metrics."
+  },
+  {
+    "id": "module_deploy",
+    "content": "Deployment automation module: Terraform configurations, Kubernetes manifests, and CI/CD pipeline definitions for AWS and GCP."
+  },
+  {
+    "id": "module_monitoring",
+    "content": "Monitoring module: Prometheus metrics, Grafana dashboards, and alerting rules for system health and performance."
+  },
+  {
+    "id": "module_utils",
+    "content": "Utility functions: Common helpers for string manipulation, date formatting, validation, and error handling across all modules."
+  },
+  {
+    "id": "module_config",
+    "content": "Configuration module: Centralized config management with environment variables, feature flags, and secrets management."
+  }
+]

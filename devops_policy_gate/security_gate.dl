@@ -1,0 +1,70 @@
+% ============================================================
+% Security Gate Policy for CI/CD & DevOps Operations
+% ============================================================
+% This policy enforces security and compliance rules on
+% infrastructure operations before they are executed.
+% ============================================================
+
+% --- Security Rules ---
+
+% Block open security groups (0.0.0.0/0)
+halt("Req", "Security group allows unrestricted access (0.0.0.0/0)") :-
+    action_operation("Req", "terraform_apply"),
+    meta("has_open_security_group", "true").
+
+% Block public database exposure
+halt("Req", "Database must not be publicly accessible") :-
+    action_operation("Req", "terraform_apply"),
+    meta("db_publicly_accessible", "true").
+
+% --- Approval Requirements ---
+
+% Require approval for production deployments
+halt("Req", "Production deployments require approval") :-
+    action_operation("Req", "kubectl_deploy"),
+    meta("target_env", "production"),
+    !meta("has_approval", "true").
+
+% Require approval for terraform destroy
+halt("Req", "Terraform destroy requires approval") :-
+    action_operation("Req", "terraform_destroy"),
+    !meta("has_approval", "true").
+
+% Block destructive operations during business hours (9-17 UTC)
+halt("Req", "Cannot destroy infrastructure during business hours") :-
+    action_operation("Req", "terraform_destroy"),
+    meta("current_hour", "9").
+halt("Req", "Cannot destroy infrastructure during business hours") :-
+    action_operation("Req", "terraform_destroy"),
+    meta("current_hour", "10").
+halt("Req", "Cannot destroy infrastructure during business hours") :-
+    action_operation("Req", "terraform_destroy"),
+    meta("current_hour", "11").
+halt("Req", "Cannot destroy infrastructure during business hours") :-
+    action_operation("Req", "terraform_destroy"),
+    meta("current_hour", "12").
+halt("Req", "Cannot destroy infrastructure during business hours") :-
+    action_operation("Req", "terraform_destroy"),
+    meta("current_hour", "13").
+halt("Req", "Cannot destroy infrastructure during business hours") :-
+    action_operation("Req", "terraform_destroy"),
+    meta("current_hour", "14").
+halt("Req", "Cannot destroy infrastructure during business hours") :-
+    action_operation("Req", "terraform_destroy"),
+    meta("current_hour", "15").
+halt("Req", "Cannot destroy infrastructure during business hours") :-
+    action_operation("Req", "terraform_destroy"),
+    meta("current_hour", "16").
+halt("Req", "Cannot destroy infrastructure during business hours") :-
+    action_operation("Req", "terraform_destroy"),
+    meta("current_hour", "17").
+
+% Block scaling beyond maximum replicas (using string matching)
+halt("Req", "Scale exceeds maximum replicas") :-
+    action_operation("Req", "kubectl_scale"),
+    meta("scale_too_high", "true").
+
+% Block scaling to zero
+halt("Req", "Cannot scale to zero replicas") :-
+    action_operation("Req", "kubectl_scale"),
+    meta("target_replicas", "0").
