@@ -406,17 +406,15 @@ func runScenario(ctx context.Context, client *sdk.Client, name, user, query stri
 func runPIIScenario(ctx context.Context, client *sdk.Client, name, user string, leakPII, expectRetry bool) {
 	fmt.Printf("\n--- Running %s ---\n", name)
 
-	// Exercise the PII post-check end-to-end:
-	//   1. Simulate the LLM producing output.
-	//   2. Call the registered pii_scan Go callback directly (this is
-	//      what the supervised runtime's Reflect/Validate hook would
-	//      do in a production wiring).
-	//   3. If PII is detected, inject pii_scan(Output) as a fact and
-	//      assert the policy derives contains_pii/1 and emits retry/2.
-	// This is honest about the SDK boundary: external predicates are
-	// Go functions that the policy references; the demo proves both
-	// sides are wired correctly without depending on Mangle's
-	// EDB-predicate execution path during query evaluation.
+	// Exercise the PII post-check end-to-end through the real
+	// supervised path (Reflect):
+	//   1. Load pii_scan fact for the LLM output (simulating the
+	//      external predicate's result — in production, the engine
+	//      calls the registered Go callback during evaluation).
+	//   2. Call ExecuteByName → supervised pre-check → inner action
+	//      → post-check (Reflect) evaluates halt("Output", ...)
+	//      which derives contains_pii(_) from the pii_scan fact.
+	//   3. If PII detected, the post-check surfaces a policy violation.
 	llmOutput := "I have processed your request safely"
 	if leakPII {
 		llmOutput = "The user's SSN is 123-45-6789 and credit card is 4532-1234-5678-9010"
@@ -425,7 +423,6 @@ func runPIIScenario(ctx context.Context, client *sdk.Client, name, user string, 
 	piiDetected := ssnPattern.MatchString(llmOutput)
 
 	if !piiDetected {
-		// Safe output: no PII, no retry.
 		if expectRetry {
 			recordFailure("Expected PII detection in output: %q", llmOutput)
 		} else {
@@ -434,36 +431,52 @@ func runPIIScenario(ctx context.Context, client *sdk.Client, name, user string, 
 		return
 	}
 
-	// PII detected: inject the predicate result and verify the policy
-	// rule fires. We use LoadFacts (not the query path) because the
-	// policy's pii_scan reference is resolved by the engine's external
-	// callback map at evaluation time, not at fact-load time.
-	_ = user
+	// Load the pii_scan fact so the policy's contains_pii rule can
+	// derive during the Reflect post-check evaluation.
 	fact := fmt.Sprintf(`pii_scan("%s").`, llmOutput)
 	if err := client.LoadFacts([]string{fact}); err != nil {
 		recordFailure("LoadFacts(pii_scan result) failed: %v", err)
 		return
 	}
 
-	// Query the derived fact to confirm the policy rule fired.
-	solutions, err := client.Engine().Query(ctx, nil, `contains_pii(H)`)
-	if err != nil {
-		recordFailure("contains_pii query failed: %v", err)
-		return
-	}
-	policyDerived := len(solutions) > 0
+	// Execute through the real supervised path. The Reflect post-check
+	// evaluates halt("Output", "PII detected in output: ...") which
+	// fires because contains_pii(_) derives from the pii_scan fact.
+	req := QueryRequest{Type: "query", Text: "PII check"}
+	_, err := client.ExecuteByName(ctx, "simulate_llm", req,
+		sdk.WithMetadata("user", user),
+	)
 
 	if expectRetry {
-		if policyDerived {
-			fmt.Println("PASS: PII detected, policy derived contains_pii/1 as expected.")
+		if err != nil && core.IsPolicyViolationError(err) {
+			// Post-check halted. Now exercise retry/2 steering:
+			// EvaluateSteering queries retry(Req, Hint) which should
+			// derive because contains_pii(_) is true from the pii_scan fact.
+			reqEnv := core.NewEnvelope(req)
+			reqEnv.Metadata["user"] = user
+			decision, meta, steerErr := client.Engine().EvaluateSteering(ctx, reqEnv)
+			if steerErr != nil {
+				recordFailure("EvaluateSteering failed: %v", steerErr)
+				return
+			}
+			if decision != "RETRY" {
+				recordFailure("Expected RETRY steering decision, got: %s", decision)
+				return
+			}
+			hint := meta["manglekit.feedback"]
+			if hint == "" {
+				recordFailure("Expected feedback hint in retry metadata, got empty")
+				return
+			}
+			fmt.Printf("PASS: PII detected, Reflect halted, retry/2 steering fired with hint: %s\n", hint)
 		} else {
-			recordFailure("Expected contains_pii to derive from pii_scan fact.")
+			recordFailure("Expected PII post-check halt, got: %v", err)
 		}
 	} else {
-		if policyDerived {
-			recordFailure("Safe output should not have produced contains_pii.")
+		if err != nil {
+			recordFailure("Safe output should not have been blocked: %v", err)
 		} else {
-			fmt.Println("PASS: Safe response, no contains_pii derived.")
+			fmt.Println("PASS: Safe response, no PII halt.")
 		}
 	}
 }

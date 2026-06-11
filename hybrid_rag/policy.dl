@@ -102,6 +102,11 @@ halt(Req, "Data Leakage Blocked: top_secret data cannot flow to public_client") 
 
 contains_pii(H) :- pii_scan(H).
 
+% Post-check: halt on PII in output. The Reflect path evaluates
+% halt("Output", ...) rules after the inner action completes.
+halt("Output", "PII detected in output: RETRY required, scrub SSN") :-
+    contains_pii(_).
+
 retry(Req, "PII detected: RETRY required, scrub SSN from output") :-
     type(Req, "query"),
     contains_pii(_).
