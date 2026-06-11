@@ -13,6 +13,14 @@ import (
 	"github.com/duynguyendang/manglekit/sdk"
 )
 
+// --- Constants: Datalog Policy ---
+
+const knowledgePolicy = `
+		manages_star(X, Y) :- triple(X, "reports_to", Y).
+		manages_star(X, Y) :- triple(X, "reports_to", Z), manages_star(Z, Y).
+		can_access_doc(User, Doc) :- triple(Team, "has_member", User), triple(Project, "owned_by", Team), triple(Project, "has_doc", Doc).
+	`
+
 func exampleDir() string {
 	_, filename, _, _ := runtime.Caller(0)
 	return filepath.Dir(filename)
@@ -46,12 +54,7 @@ func main() {
 	}
 	fmt.Printf("Loaded %d facts from ontology.nt\n\n", len(facts))
 
-	policy := `
-		manages_star(X, Y) :- triple(X, "reports_to", Y).
-		manages_star(X, Y) :- triple(X, "reports_to", Z), manages_star(Z, Y).
-		can_access_doc(User, Doc) :- triple(Team, "has_member", User), triple(Project, "owned_by", Team), triple(Project, "has_doc", Doc).
-	`
-	if err := client.Engine().LoadPolicy(ctx, policy); err != nil {
+	if err := client.Engine().LoadPolicy(ctx, knowledgePolicy); err != nil {
 		log.Fatalf("Failed to load policy: %v", err)
 	}
 
@@ -124,19 +127,19 @@ func main() {
 	fmt.Println()
 
 	fmt.Println("--- Query 7: QueryWithAudit (audit trail) ---")
-	runQueryWithAudit(ctx, policy, facts)
+	runQueryWithAudit(ctx, facts)
 	fmt.Println()
 
 	fmt.Println("Done.")
 }
 
-func runQueryWithAudit(ctx context.Context, policy string, facts []string) {
+func runQueryWithAudit(ctx context.Context, facts []string) {
 	sys, err := multiagent.NewAgentSystem(ctx)
 	if err != nil {
 		log.Fatalf("Failed to create agent system: %v", err)
 	}
 
-	if err := sys.Engine().LoadPolicy(ctx, policy); err != nil {
+	if err := sys.Engine().LoadPolicy(ctx, knowledgePolicy); err != nil {
 		log.Fatalf("Failed to load policy: %v", err)
 	}
 	if err := sys.Engine().LoadFacts(facts); err != nil {

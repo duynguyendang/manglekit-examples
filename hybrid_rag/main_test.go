@@ -13,6 +13,30 @@ import (
 	"github.com/duynguyendang/manglekit/sdk"
 )
 
+// noopPIIScan is a pii_scan external predicate that never matches.
+// The transitive-access and supervised-execution tests don't exercise
+// the PII rule, but the policy references pii_scan, so we must still
+// provide a callback or the policy fails to load.
+func noopPIIScan(_ context.Context, _ []any) ([][]any, error) {
+	return nil, nil
+}
+
+// registerNoopPIIScan registers the no-op pii_scan callback on the
+// engine so the policy's reference to pii_scan resolves. Returns
+// false if the engine does not expose RegisterExternalPredicate.
+func registerNoopPIIScan(t *testing.T, client *sdk.Client) {
+	t.Helper()
+	if reg, ok := client.Engine().(interface {
+		RegisterExternalPredicate(string, func(context.Context, []any) ([][]any, error)) error
+	}); ok {
+		if err := reg.RegisterExternalPredicate("pii_scan", noopPIIScan); err != nil {
+			t.Fatalf("Failed to register pii_scan: %v", err)
+		}
+	} else {
+		t.Fatal("engine does not support RegisterExternalPredicate")
+	}
+}
+
 func repoRoot() string {
 	_, filename, _, _ := runtime.Caller(0)
 	return filepath.Dir(filepath.Dir(filename))
@@ -28,7 +52,18 @@ func TestTransitiveAccessControl(t *testing.T) {
 	}
 
 	client := manglekit.Must(manglekit.NewClient(ctx))
-	if err := client.Engine().LoadPolicy(ctx, string(policyData)); err != nil {
+	t.Cleanup(func() { client.Shutdown(ctx) })
+
+	// Register pii_scan BEFORE loading the policy, then load via
+	// LoadFromSource so the engine auto-emits the external Decl.
+	registerNoopPIIScan(t, client)
+	loader, ok := client.Engine().(interface {
+		LoadFromSource(context.Context, string) error
+	})
+	if !ok {
+		t.Fatal("engine does not support LoadFromSource")
+	}
+	if err := loader.LoadFromSource(ctx, string(policyData)); err != nil {
 		t.Fatalf("Failed to load policy: %v", err)
 	}
 
@@ -80,13 +115,20 @@ func TestSupervisedActionExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
+	t.Cleanup(func() { client.Shutdown(ctx) })
 
-	// Load policy
 	policyData, err := os.ReadFile(filepath.Join(root, "hybrid_rag/policy.dl"))
 	if err != nil {
 		t.Fatalf("Failed to read policy.dl: %v", err)
 	}
-	if err := client.Engine().LoadPolicy(ctx, string(policyData)); err != nil {
+	registerNoopPIIScan(t, client)
+	loader, ok := client.Engine().(interface {
+		LoadFromSource(context.Context, string) error
+	})
+	if !ok {
+		t.Fatal("engine does not support LoadFromSource")
+	}
+	if err := loader.LoadFromSource(ctx, string(policyData)); err != nil {
 		t.Fatalf("Failed to load policy: %v", err)
 	}
 

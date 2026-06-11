@@ -1,3 +1,13 @@
+// devops_policy_gate demonstrates infrastructure governance with Datalog
+// security gates: numeric replica limits, business-hour restrictions on
+// destructive operations, and approval/permission flags.
+//
+// The Mangle analyzer rejects cross-fact :lt/:lte built-ins, so the
+// numeric comparisons themselves are performed in Go. The caller
+// pre-computes the boolean outcome (business_hours(H), scale_too_high(N),
+// scale_too_low(N)) and the policy just pattern-matches. This is the
+// honest boundary: the Datalog layer is a gate, not a calculator.
+
 package main
 
 import (
@@ -7,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
@@ -15,6 +26,50 @@ import (
 func exampleDir() string {
 	_, filename, _, _ := runtime.Caller(0)
 	return filepath.Dir(filename)
+}
+
+const (
+	businessHoursStart = 9
+	businessHoursEnd   = 18 // exclusive
+	maxReplicas        = 10
+	minReplicas        = 1
+)
+
+// injectNumericFact appends a numeric predicate fact to env.Facts so
+// downstream Datalog queries can read structured numeric values.
+func injectNumericFact(env *core.Envelope, predicate string, n int) {
+	env.Facts = append(env.Facts, fmt.Sprintf("%s(%d).", predicate, n))
+}
+
+// attachPrecomputedChecks performs the numeric comparisons in Go and
+// publishes the result as Datalog facts on the envelope. The policy
+// pattern-matches these facts rather than re-doing the comparison.
+//
+// This keeps the Datalog layer simple, honest about its capability
+// boundary, and free of analyzer mode errors. The Mangle policy is
+// the gate; Go is the calculator.
+//
+// Empty rawReplicas/rawHour are treated as "not applicable for this
+// scenario" and produce no fact. This avoids spuriously emitting
+// scale_too_low(0) into a terraform-destroy envelope.
+func attachPrecomputedChecks(env *core.Envelope, rawReplicas, rawHour string) {
+	if rawReplicas != "" {
+		if n, err := strconv.Atoi(rawReplicas); err == nil {
+			if n > maxReplicas {
+				env.Facts = append(env.Facts, fmt.Sprintf("scale_too_high(%d).", n))
+			}
+			if n < minReplicas {
+				env.Facts = append(env.Facts, fmt.Sprintf("scale_too_low(%d).", n))
+			}
+		}
+	}
+	if rawHour != "" {
+		if h, err := strconv.Atoi(rawHour); err == nil {
+			if h >= businessHoursStart && h < businessHoursEnd {
+				env.Facts = append(env.Facts, fmt.Sprintf("business_hours(%d).", h))
+			}
+		}
+	}
 }
 
 func main() {
@@ -28,13 +83,11 @@ func main() {
 	fmt.Println("3. Violations are blocked before reaching infrastructure")
 	fmt.Println()
 
-	// 1. Initialize Manglekit Client
 	client, err := sdk.NewClient(ctx)
 	if err != nil {
 		log.Fatalf("Failed to initialize client: %v", err)
 	}
 
-	// 2. Load Security Gate Policy
 	policyBytes, err := os.ReadFile(filepath.Join(exampleDir(), "security_gate.dl"))
 	if err != nil {
 		log.Fatalf("Failed to read security_gate.dl: %v", err)
@@ -43,21 +96,20 @@ func main() {
 	if err := client.Engine().LoadPolicy(ctx, string(policyBytes)); err != nil {
 		log.Fatalf("Failed to load security gate policy: %v", err)
 	}
-	fmt.Println("🛡️  Loaded security_gate.dl policy with 9 governance rules.")
+	fmt.Println("🛡️  Loaded security_gate.dl policy (governance + pre-computed checks).")
 	fmt.Println()
 
-	// 3. Test Scenarios
 	fmt.Println("🧪 Testing DevOps operations against security policies...")
 	fmt.Println()
 
-	// --- Scenario 1: Kubectl Scale (Exceeds Limit) ---
+	// --- Scenario 1: Kubectl Scale to 20 (exceeds limit) ---
 	fmt.Println("--- Scenario 1: Kubectl Scale to 20 Replicas (Should Block) ---")
 	scaleEnv := core.NewEnvelope(map[string]string{
 		"deployment": "api-server",
 		"namespace":  "production",
 	})
-	scaleEnv.Metadata["target_replicas"] = "20"
-	scaleEnv.Metadata["scale_too_high"] = "true"
+	injectNumericFact(&scaleEnv, "target_replicas", 20)
+	attachPrecomputedChecks(&scaleEnv, "20", "")
 	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_scale"}, scaleEnv)
 	if core.IsAlignmentError(err) {
 		fmt.Printf("✅ Blocked: %v\n", err)
@@ -66,13 +118,14 @@ func main() {
 	}
 	fmt.Println()
 
-	// --- Scenario 2: Kubectl Scale (Within Limit) ---
+	// --- Scenario 2: Kubectl Scale to 5 (within limit) ---
 	fmt.Println("--- Scenario 2: Kubectl Scale to 5 Replicas (Should Allow) ---")
 	scaleOkEnv := core.NewEnvelope(map[string]string{
 		"deployment": "api-server",
 		"namespace":  "production",
 	})
-	scaleOkEnv.Metadata["target_replicas"] = "5"
+	injectNumericFact(&scaleOkEnv, "target_replicas", 5)
+	attachPrecomputedChecks(&scaleOkEnv, "5", "")
 	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_scale"}, scaleOkEnv)
 	if core.IsAlignmentError(err) {
 		fmt.Printf("❌ Unexpectedly blocked: %v\n", err)
@@ -147,7 +200,8 @@ func main() {
 		"resource": "aws_instance",
 		"name":     "prod-db-01",
 	})
-	destroyEnv.Metadata["current_hour"] = "14"
+	injectNumericFact(&destroyEnv, "current_hour", 14)
+	attachPrecomputedChecks(&destroyEnv, "", "14")
 	destroyEnv.Metadata["has_approval"] = "true"
 	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_destroy"}, destroyEnv)
 	if core.IsAlignmentError(err) {
@@ -163,7 +217,8 @@ func main() {
 		"resource": "aws_instance",
 		"name":     "staging-db-01",
 	})
-	destroyNightEnv.Metadata["current_hour"] = "22"
+	injectNumericFact(&destroyNightEnv, "current_hour", 22)
+	attachPrecomputedChecks(&destroyNightEnv, "", "22")
 	destroyNightEnv.Metadata["has_approval"] = "true"
 	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_destroy"}, destroyNightEnv)
 	if core.IsAlignmentError(err) {

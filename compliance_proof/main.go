@@ -79,6 +79,10 @@ func main() {
 
 		env := core.NewEnvelope("process payment data")
 		env.SecurityLabels = tc.Labels
+		// AssessPlan does not inject action_operation from ActionMetadata
+		// (it passes core.ActionMetadata{} internally). Halt rules in
+		// gdpr_policy.dl require this fact, so the caller must append it.
+		env.Facts = append(env.Facts, fmt.Sprintf("action_operation(%q, %q).", "Req", tc.Action))
 		for _, f := range tc.Facts {
 			env.Facts = append(env.Facts, f)
 		}
@@ -86,6 +90,8 @@ func main() {
 		decision, err := client.Engine().AssessPlan(ctx, env)
 		if err != nil {
 			fmt.Printf("  AssessPlan error: %v\n", err)
+			allPass = false
+			continue
 		}
 
 		fmt.Printf("  Outcome: %s\n", decision.Outcome)

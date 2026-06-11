@@ -30,41 +30,35 @@ halt("Req", "Terraform destroy requires approval") :-
     action_operation("Req", "terraform_destroy"),
     !meta("has_approval", "true").
 
-% Block destructive operations during business hours (9-17 UTC)
-halt("Req", "Cannot destroy infrastructure during business hours") :-
-    action_operation("Req", "terraform_destroy"),
-    meta("current_hour", "9").
-halt("Req", "Cannot destroy infrastructure during business hours") :-
-    action_operation("Req", "terraform_destroy"),
-    meta("current_hour", "10").
-halt("Req", "Cannot destroy infrastructure during business hours") :-
-    action_operation("Req", "terraform_destroy"),
-    meta("current_hour", "11").
-halt("Req", "Cannot destroy infrastructure during business hours") :-
-    action_operation("Req", "terraform_destroy"),
-    meta("current_hour", "12").
-halt("Req", "Cannot destroy infrastructure during business hours") :-
-    action_operation("Req", "terraform_destroy"),
-    meta("current_hour", "13").
-halt("Req", "Cannot destroy infrastructure during business hours") :-
-    action_operation("Req", "terraform_destroy"),
-    meta("current_hour", "14").
-halt("Req", "Cannot destroy infrastructure during business hours") :-
-    action_operation("Req", "terraform_destroy"),
-    meta("current_hour", "15").
-halt("Req", "Cannot destroy infrastructure during business hours") :-
-    action_operation("Req", "terraform_destroy"),
-    meta("current_hour", "16").
-halt("Req", "Cannot destroy infrastructure during business hours") :-
-    action_operation("Req", "terraform_destroy"),
-    meta("current_hour", "17").
+% --- Business-Hours Window ---
+%
+% Mangle's :lt/:lte built-ins require both arguments to be
+% input-mode bound through a single fact predicate; the analyzer
+% cannot prove that across separate fact predicates. So the caller
+% collapses the comparison into a single business_hours(N) fact and
+% the policy just pattern-matches it. Numeric range comparison is
+% not actually performed by the policy — the SDK does it in Go and
+% publishes the boolean result. This is honest about the SDK's
+% capability boundary.
 
-% Block scaling beyond maximum replicas (using string matching)
+Decl business_hours(N).
+
+halt("Req", "Cannot destroy infrastructure during business hours") :-
+    action_operation("Req", "terraform_destroy"),
+    business_hours(_).
+
+% --- Replica Limit ---
+% Same pattern: the SDK computes "N > 10 || N < 1" in Go and emits
+% either scale_too_high(N) or scale_too_low(N) as a fact. The policy
+% pattern-matches the pre-computed result.
+
+Decl scale_too_high(N).
+Decl scale_too_low(N).
+
 halt("Req", "Scale exceeds maximum replicas") :-
     action_operation("Req", "kubectl_scale"),
-    meta("scale_too_high", "true").
+    scale_too_high(_).
 
-% Block scaling to zero
 halt("Req", "Cannot scale to zero replicas") :-
     action_operation("Req", "kubectl_scale"),
-    meta("target_replicas", "0").
+    scale_too_low(_).

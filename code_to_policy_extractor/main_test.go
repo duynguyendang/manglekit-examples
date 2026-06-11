@@ -66,52 +66,6 @@ func TestGetSuffix(t *testing.T) {
 	}
 }
 
-const archPolicy = `
-	Decl file_path(File, Layer).
-	Decl file_imports(File, ImportLayer).
-	Decl file_name_matches(File, Suffix).
-
-	halt("Req", "Clean Architecture violation: controller must not import domain directly") :-
-		action_operation("Req", "review_pr"),
-		file_path(File, "controllers/"),
-		file_imports(File, "domain/").
-
-	halt("Req", "Clean Architecture violation: controller must not import gateways") :-
-		action_operation("Req", "review_pr"),
-		file_path(File, "controllers/"),
-		file_imports(File, "gateways/").
-
-	halt("Req", "Clean Architecture violation: domain must not import usecases") :-
-		action_operation("Req", "review_pr"),
-		file_path(File, "domain/"),
-		file_imports(File, "usecases/").
-
-	halt("Req", "Clean Architecture violation: domain must not import controllers") :-
-		action_operation("Req", "review_pr"),
-		file_path(File, "domain/"),
-		file_imports(File, "controllers/").
-
-	halt("Req", "Clean Architecture violation: domain must not import gateways") :-
-		action_operation("Req", "review_pr"),
-		file_path(File, "domain/"),
-		file_imports(File, "gateways/").
-
-	halt("Req", "Clean Architecture violation: usecases must not import controllers") :-
-		action_operation("Req", "review_pr"),
-		file_path(File, "usecases/"),
-		file_imports(File, "controllers/").
-
-	halt("Req", "Naming convention violation: controller files must end with _controller.go") :-
-		action_operation("Req", "review_pr"),
-		file_path(File, "controllers/"),
-		!file_name_matches(File, "_controller.go").
-
-	halt("Req", "Naming convention violation: usecase files must end with _usecase.go") :-
-		action_operation("Req", "review_pr"),
-		file_path(File, "usecases/"),
-		!file_name_matches(File, "_usecase.go").
-`
-
 func buildFacts(pr PullRequest) []string {
 	var facts []string
 	for _, file := range pr.Files {

@@ -73,8 +73,10 @@ func main() {
 	loader := mcp.NewLoader(mcpCfg).WithLogger(client.Logger())
 	actions, err := loader.Load(ctx)
 	if err != nil {
-		fmt.Printf("Note: MCP server connection failed (expected in CI): %v\n", err)
+		fmt.Printf("WARNING: MCP server connection failed (expected in CI): %v\n", err)
 		fmt.Println("Falling back to simulated MCP tool registration.")
+		fmt.Println("WARNING: simulated tools are NOT exercised by the real MCP server.")
+		fmt.Println("WARNING: any pass/fail signal from these scenarios is synthetic.")
 		fmt.Println()
 		actions = simulatedMCPTools(mcpCfg.Name)
 	}

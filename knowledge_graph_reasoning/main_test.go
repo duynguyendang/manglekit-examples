@@ -25,6 +25,7 @@ func loadTestClient(t *testing.T) *sdk.Client {
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
+	t.Cleanup(func() { client.Shutdown(ctx) })
 
 	ntPath := filepath.Join(exampleRoot(), "ontology.nt")
 	data, err := os.ReadFile(ntPath)

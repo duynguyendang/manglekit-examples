@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 )
 
@@ -33,6 +34,7 @@ func TestPlanDeployToProduction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize client: %v", err)
 	}
+	t.Cleanup(func() { client.Shutdown(ctx) })
 
 	loadTestPolicy(t, ctx, client)
 
@@ -66,6 +68,40 @@ func TestPlanDeployToProduction(t *testing.T) {
 	}
 }
 
+// TestPolicyViolationCoversApprovalGate covers the scenario in
+// main.go's demonstratePolicyViolation helper: the approval policy
+// must block deploy_production when has_approval is false and allow
+// it when true. Subtests exercise each branch.
+func TestPolicyViolationCoversApprovalGate(t *testing.T) {
+	ctx := context.Background()
+
+	client, err := sdk.NewClient(ctx)
+	if err != nil {
+		t.Fatalf("Failed to initialize client: %v", err)
+	}
+	t.Cleanup(func() { client.Shutdown(ctx) })
+
+	if err := client.Engine().LoadPolicy(ctx, approvalPolicy); err != nil {
+		t.Fatalf("Failed to load approval policy: %v", err)
+	}
+
+	t.Run("UnapprovedBlocked", func(t *testing.T) {
+		denied := core.NewEnvelope("test-deploy")
+		denied.SetMeta("has_approval", "false")
+		if err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "deploy_production"}, denied); !core.IsAlignmentError(err) {
+			t.Errorf("expected unapproved deploy to be blocked, got: %v", err)
+		}
+	})
+
+	t.Run("ApprovedPermitted", func(t *testing.T) {
+		approved := core.NewEnvelope("test-deploy-approved")
+		approved.SetMeta("has_approval", "true")
+		if err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "deploy_production"}, approved); err != nil {
+			t.Errorf("expected approved deploy to be allowed, got: %v", err)
+		}
+	})
+}
+
 func TestPlanOnboardUser(t *testing.T) {
 	ctx := context.Background()
 
@@ -73,6 +109,7 @@ func TestPlanOnboardUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to initialize client: %v", err)
 	}
+	t.Cleanup(func() { client.Shutdown(ctx) })
 
 	loadTestPolicy(t, ctx, client)
 

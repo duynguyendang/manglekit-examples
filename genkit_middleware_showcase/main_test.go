@@ -1,11 +1,34 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"github.com/duynguyendang/manglekit/adapters/ai"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/firebase/genkit/go/plugins/middleware"
 )
+
+// stubGenerator implements core.TextGenerator so it can stand in for the
+// real LLM in the showcase. It records that Generate was called.
+type stubGenerator struct {
+	called bool
+}
+
+func (s *stubGenerator) Complete(ctx context.Context, prompt string) (string, error) {
+	return "ok", nil
+}
+
+func (s *stubGenerator) Generate(ctx context.Context, prompt string, opts ...core.GenerateOption) (*core.LLMResponse, error) {
+	s.called = true
+	return &core.LLMResponse{Text: "ok", Usage: map[string]int{"prompt": 0, "completion": 0}}, nil
+}
+
+func (s *stubGenerator) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
+	ch := make(chan core.StreamChunk)
+	close(ch)
+	return ch, nil
+}
 
 func TestMiddlewareDemoActionMetadata(t *testing.T) {
 	action := &MiddlewareDemoAction{
@@ -19,6 +42,41 @@ func TestMiddlewareDemoActionMetadata(t *testing.T) {
 	}
 	if meta.Type != "llm_with_middleware" {
 		t.Errorf("expected Type=%q, got %q", "llm_with_middleware", meta.Type)
+	}
+}
+
+// TestMiddlewareDemoActionExecute verifies that the Execute path actually
+// invokes the underlying generator with a middleware config. This is the
+// behaviour the showcase is meant to demonstrate, so it must be covered
+// even if the LLM call itself is stubbed.
+func TestMiddlewareDemoActionExecute(t *testing.T) {
+	// Replace the package-level generator registry with a stub so we don't
+	// need a real provider configured. The middleware config composition
+	// is what we're testing, not the model call.
+	gen := &stubGenerator{}
+	action := &MiddlewareDemoAction{name: "demo_action", generator: gen}
+
+	env := core.NewEnvelope("hello")
+	out, err := action.Execute(context.Background(), env)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !gen.called {
+		t.Fatal("expected underlying generator to be invoked")
+	}
+	if out.Payload != "ok" {
+		t.Errorf("expected payload %q, got %v", "ok", out.Payload)
+	}
+}
+
+func TestMiddlewareDemoActionExecuteBadPayload(t *testing.T) {
+	action := &MiddlewareDemoAction{name: "demo_action", generator: &stubGenerator{}}
+	_, err := action.Execute(context.Background(), core.NewEnvelope(123))
+	if err == nil {
+		t.Fatal("expected error for non-string payload")
+	}
+	if err.Error() == "" {
+		t.Error("expected non-empty error message")
 	}
 }
 

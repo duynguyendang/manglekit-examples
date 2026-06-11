@@ -59,6 +59,11 @@ func main() {
 	mock := &scriptedMock{}
 	maxAttempts := 5
 
+	// verifierErr tracks the most recent verifier query error so a
+	// non-convergence failure can report a cause instead of going silent.
+	var verifierErr error
+	verifierFailures := 0
+
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		x, y := mock.Next()
 		fmt.Printf("--- Attempt %d: proposing x=%d, y=%d ---\n", attempt, x, y)
@@ -71,7 +76,15 @@ func main() {
 		// Query for violations
 		solutions, err := client.Engine().Query(ctx, facts, `violation(Reason)`)
 		if err != nil {
+			verifierErr = err
+			verifierFailures++
 			fmt.Printf("  Query error: %v\n", err)
+			// Fail fast: a persistent verifier error means the symbolic
+			// layer is broken; retrying will not recover.
+			if verifierFailures >= 2 {
+				fmt.Printf("FAIL: verifier query errored %d times; last error: %v\n", verifierFailures, verifierErr)
+				os.Exit(1)
+			}
 			continue
 		}
 
@@ -101,6 +114,11 @@ func main() {
 		fmt.Println("  Rejecting — feeding violations back to mock solver.")
 	}
 
-	fmt.Printf("FAIL: did not converge within %d attempts\n", maxAttempts)
+	if verifierErr != nil {
+		fmt.Printf("FAIL: did not converge within %d attempts (last verifier error: %v)\n", maxAttempts, verifierErr)
+	} else {
+		fmt.Printf("FAIL: did not converge within %d attempts\n", maxAttempts)
+	}
 	os.Exit(1)
 }
+

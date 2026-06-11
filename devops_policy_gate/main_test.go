@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,6 +19,8 @@ func setupClient(t *testing.T) *sdk.Client {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { client.Shutdown(ctx) })
+
 	_, filename, _, _ := runtime.Caller(0)
 	dir := filepath.Dir(filename)
 	policyBytes, err := os.ReadFile(filepath.Join(dir, "security_gate.dl"))
@@ -30,14 +33,33 @@ func setupClient(t *testing.T) *sdk.Client {
 	return client
 }
 
+// addNum is a tiny test helper that injects a numeric atom.
+func addNum(t *testing.T, env *core.Envelope, pred string, n int) {
+	t.Helper()
+	env.Facts = append(env.Facts, fmt.Sprintf("%s(%d).", pred, n))
+}
+
 func TestScaleTooHigh(t *testing.T) {
 	client := setupClient(t)
 	ctx := context.Background()
 	env := core.NewEnvelope(map[string]string{})
-	env.Metadata["scale_too_high"] = "true"
+	addNum(t, &env, "target_replicas", 20)
+	attachPrecomputedChecks(&env, "20", "")
 	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_scale"}, env)
 	if !core.IsAlignmentError(err) {
-		t.Error("expected scale_too_high=true to be blocked")
+		t.Error("expected scale_too_high (20 > 10) to be blocked")
+	}
+}
+
+func TestScaleAtLimit(t *testing.T) {
+	client := setupClient(t)
+	ctx := context.Background()
+	env := core.NewEnvelope(map[string]string{})
+	addNum(t, &env, "target_replicas", 11)
+	attachPrecomputedChecks(&env, "11", "")
+	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_scale"}, env)
+	if !core.IsAlignmentError(err) {
+		t.Error("expected 11 > 10 to be blocked")
 	}
 }
 
@@ -45,10 +67,23 @@ func TestScaleWithinLimit(t *testing.T) {
 	client := setupClient(t)
 	ctx := context.Background()
 	env := core.NewEnvelope(map[string]string{})
-	env.Metadata["target_replicas"] = "5"
+	addNum(t, &env, "target_replicas", 5)
+	attachPrecomputedChecks(&env, "5", "")
 	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_scale"}, env)
 	if core.IsAlignmentError(err) {
 		t.Errorf("expected scale within limit to be allowed, got: %v", err)
+	}
+}
+
+func TestScaleZeroBlocked(t *testing.T) {
+	client := setupClient(t)
+	ctx := context.Background()
+	env := core.NewEnvelope(map[string]string{})
+	addNum(t, &env, "target_replicas", 0)
+	attachPrecomputedChecks(&env, "0", "")
+	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_scale"}, env)
+	if !core.IsAlignmentError(err) {
+		t.Error("expected 0 replicas to be blocked")
 	}
 }
 
@@ -102,11 +137,26 @@ func TestDestroyDuringBusinessHours(t *testing.T) {
 	client := setupClient(t)
 	ctx := context.Background()
 	env := core.NewEnvelope(map[string]string{})
-	env.Metadata["current_hour"] = "14"
+	addNum(t, &env, "current_hour", 14)
+	attachPrecomputedChecks(&env, "", "14")
 	env.Metadata["has_approval"] = "true"
 	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_destroy"}, env)
 	if !core.IsAlignmentError(err) {
-		t.Error("expected destroy during business hours to be blocked")
+		t.Error("expected destroy during business hours (14) to be blocked")
+	}
+}
+
+func TestDestroyAtBoundary(t *testing.T) {
+	// 17:00 UTC is the last hour still considered "business hours" (H < 18).
+	client := setupClient(t)
+	ctx := context.Background()
+	env := core.NewEnvelope(map[string]string{})
+	addNum(t, &env, "current_hour", 17)
+	attachPrecomputedChecks(&env, "", "17")
+	env.Metadata["has_approval"] = "true"
+	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_destroy"}, env)
+	if !core.IsAlignmentError(err) {
+		t.Error("expected destroy at 17:00 to still be blocked")
 	}
 }
 
@@ -114,7 +164,8 @@ func TestDestroyAfterHours(t *testing.T) {
 	client := setupClient(t)
 	ctx := context.Background()
 	env := core.NewEnvelope(map[string]string{})
-	env.Metadata["current_hour"] = "22"
+	addNum(t, &env, "current_hour", 22)
+	attachPrecomputedChecks(&env, "", "22")
 	env.Metadata["has_approval"] = "true"
 	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_destroy"}, env)
 	if core.IsAlignmentError(err) {

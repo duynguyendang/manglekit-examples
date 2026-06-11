@@ -8,54 +8,15 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 )
 
-func exampleDir() string {
-	_, filename, _, _ := runtime.Caller(0)
-	return filepath.Dir(filename)
-}
+// --- Constants: Datalog Policy ---
 
-// PRFile represents a file in a pull request with its imports.
-type PRFile struct {
-	Path        string   `json:"path"`
-	Imports     []string `json:"imports"`
-	AddedLines  int      `json:"added_lines"`
-	DeletedLines int     `json:"deleted_lines"`
-}
-
-// PullRequest represents a PR with multiple files.
-type PullRequest struct {
-	PRID   string   `json:"pr_id"`
-	Title  string   `json:"title"`
-	Author string   `json:"author"`
-	Files  []PRFile `json:"files"`
-}
-
-func main() {
-	ctx := context.Background()
-
-	fmt.Println("🏗️  Dynamic Architecture Linter")
-	fmt.Println("================================")
-	fmt.Println("Demonstrating how architecture guidelines are enforced on PRs:")
-	fmt.Println("1. Architecture guidelines define allowed dependencies")
-	fmt.Println("2. Rules are compiled to Datalog")
-	fmt.Println("3. PR dependencies are checked against rules")
-	fmt.Println("4. Violations are detected with specific error messages")
-	fmt.Println()
-
-	// 1. Initialize Manglekit Client
-	client, err := sdk.NewClient(ctx)
-	if err != nil {
-		log.Fatalf("Failed to initialize client: %v", err)
-	}
-
-	// 2. Load Architecture Rules (simulating LLM extraction from guidelines.md)
-	// In production, this would use the extractor to parse architecture_guidelines.md
-	fmt.Println("📄 Loading architecture rules...")
-	archPolicy := `
+const archPolicy = `
 		% ============================================
 		% Clean Architecture Dependency Rules
 		% ============================================
@@ -110,6 +71,49 @@ func main() {
 			file_path(File, "usecases/"),
 			!file_name_matches(File, "_usecase.go").
 	`
+
+func exampleDir() string {
+	_, filename, _, _ := runtime.Caller(0)
+	return filepath.Dir(filename)
+}
+
+// PRFile represents a file in a pull request with its imports.
+type PRFile struct {
+	Path        string   `json:"path"`
+	Imports     []string `json:"imports"`
+	AddedLines  int      `json:"added_lines"`
+	DeletedLines int     `json:"deleted_lines"`
+}
+
+// PullRequest represents a PR with multiple files.
+type PullRequest struct {
+	PRID   string   `json:"pr_id"`
+	Title  string   `json:"title"`
+	Author string   `json:"author"`
+	Files  []PRFile `json:"files"`
+}
+
+func main() {
+	ctx := context.Background()
+
+	fmt.Println("🏗️  Dynamic Architecture Linter")
+	fmt.Println("================================")
+	fmt.Println("Demonstrating how architecture guidelines are enforced on PRs:")
+	fmt.Println("1. Architecture guidelines define allowed dependencies")
+	fmt.Println("2. Rules are compiled to Datalog")
+	fmt.Println("3. PR dependencies are checked against rules")
+	fmt.Println("4. Violations are detected with specific error messages")
+	fmt.Println()
+
+	// 1. Initialize Manglekit Client
+	client, err := sdk.NewClient(ctx)
+	if err != nil {
+		log.Fatalf("Failed to initialize client: %v", err)
+	}
+
+	// 2. Load Architecture Rules (simulating LLM extraction from guidelines.md)
+	// In production, this would use the extractor to parse architecture_guidelines.md
+	fmt.Println("📄 Loading architecture rules...")
 
 	if err := client.Engine().LoadPolicy(ctx, archPolicy); err != nil {
 		log.Fatalf("Failed to load architecture policy: %v", err)
@@ -240,12 +244,11 @@ func getLayer(path string) string {
 
 // hasValidName checks if a file follows naming conventions.
 func hasValidName(path string) bool {
-	layer := getLayer(path)
-	switch layer {
+	switch getLayer(path) {
 	case "controllers/":
-		return len(path) > 14 && path[len(path)-14:] == "_controller.go"
+		return strings.HasSuffix(path, "_controller.go")
 	case "usecases/":
-		return len(path) > 11 && path[len(path)-11:] == "_usecase.go"
+		return strings.HasSuffix(path, "_usecase.go")
 	default:
 		return true
 	}

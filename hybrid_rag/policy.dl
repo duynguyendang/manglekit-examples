@@ -39,17 +39,15 @@ member_of(User, Group) :- triple(Group, "contains_user", User).
 owns(Group, Project) :- triple(Group, "owns_project", Project).
 contains(Project, Doc) :- triple(Project, "contains_doc", Doc).
 
-% Transitive access rule: User can access Doc if:
-% - User is a member of a Group
-% - Group owns a Project
-% - Project contains Doc
+% Transitive access rule. User can access Doc if the user is a member
+% of a Group, the Group owns a Project, and the Project contains the Doc.
 can_access(User, Doc) :-
     member_of(User, Group),
     owns(Group, Project),
     contains(Project, Doc).
 
-% Unauthorized: there exists a memory_hit the user cannot access
-% This must be true for ALL hits to pass; a single miss triggers halt.
+% Unauthorized: there exists a memory_hit the user cannot access.
+% A single miss triggers halt.
 unauthorized_hit(Req, User) :-
     type(Req, "query"),
     user(User),
@@ -66,3 +64,44 @@ allow(Req) :-
     type(Req, "query"),
     user(User),
     !unauthorized_hit(Req, User).
+
+% ==========================================================
+% Feature 2: Egress / Information-Flow Control (Scenario F/G)
+% ==========================================================
+%
+% Blocks egress of documents labelled "TOP_SECRET" to public
+% destinations. The caller injects meta("destination", "public_client")
+% and meta("memory_hit_N", "doc_id") for any top-secret hit; this
+% rule emits the "Data Leakage Blocked" halt message that
+% runEgressScenario (main.go) checks for.
+
+% Extract any top-secret memory hits.
+top_secret_hit(DocID) :- memory_hit(DocID), triple(DocID, "has_label", "TOP_SECRET").
+
+halt(Req, "Data Leakage Blocked: top_secret data cannot flow to public_client") :-
+    type(Req, "query"),
+    meta("destination", "public_client"),
+    top_secret_hit(DocID).
+
+% ==========================================================
+% Feature 3: PII post-check (Scenario D)
+% ==========================================================
+%
+% Scenarios D/E are exercised via the post-check (output supervision)
+% path, not the AssessPlan pre-check. The post-check uses the engine's
+% external-predicate hook to scan LLM output. pii_scan(Output) is
+% registered in main.go and returns one row when the output contains
+% a US SSN (NNN-NN-NNNN). retry/2 is the steering response consumed
+% by the supervised action runtime; the wrapper converts it into
+% core.DecisionRetry so the verify-retry loop re-invokes the LLM.
+%
+% NOTE: Do NOT write `Decl pii_scan(Output)` here. The engine's
+% LoadFromSource path auto-emits the `Decl ... external()` declaration
+% for any registered external predicate; a manual Decl will be
+% rejected as a redeclaration.
+
+contains_pii(H) :- pii_scan(H).
+
+retry(Req, "PII detected: RETRY required, scrub SSN from output") :-
+    type(Req, "query"),
+    contains_pii(_).

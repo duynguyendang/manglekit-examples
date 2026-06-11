@@ -12,6 +12,14 @@ import (
 	"github.com/duynguyendang/manglekit/sdk"
 )
 
+// --- Constants: Datalog Policy ---
+
+const approvalPolicy = `
+		halt("Req", "deploy_production blocked: requires manual approval") :-
+			action_operation("Req", "deploy_production"),
+			!meta("has_approval", "true").
+	`
+
 func exampleDir() string {
 	_, filename, _, _ := runtime.Caller(0)
 	return filepath.Dir(filename)
@@ -217,12 +225,7 @@ func demonstratePrerequisiteFailure(ctx context.Context, client *sdk.Client) {
 
 func demonstratePolicyViolation(ctx context.Context, client *sdk.Client) {
 	// Load a policy that blocks certain actions
-	policy := `
-		halt("Req", "deploy_production blocked: requires manual approval") :-
-			action_operation("Req", "deploy_production"),
-			!meta("has_approval", "true").
-	`
-	if err := client.Engine().LoadPolicy(ctx, policy); err != nil {
+	if err := client.Engine().LoadPolicy(ctx, approvalPolicy); err != nil {
 		fmt.Printf("  Failed to load policy: %v\n", err)
 		return
 	}

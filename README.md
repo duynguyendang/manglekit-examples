@@ -48,12 +48,19 @@ Examples are ordered by complexity. Start with the basics and work your way up.
 | **hybrid_rag** | Multi-tenant RAG with transitive access control, PII detection, and security tainting | No (mocks) | `go run ./hybrid_rag/` |
 | **ooda_document_generator** | Full 5-phase OODA loop with self-correction and Datalog policies | No | `go run ./ooda_document_generator/` |
 
+### Security & Verification
+
+| Example | Description | API Key | Run |
+|---|---|---|---|
+| **jailbreak_proof_agent** | T0 taint axiom blocks data exfiltration — mock LLM complies with injection but kernel holds | No | `go run ./jailbreak_proof_agent/` |
+| **compliance_proof** | GDPR as tiered Datalog — AssessPlan renders AuditTrail as machine-checkable proof | No | `go run ./compliance_proof/` |
+| **verified_reasoning** | Cheap model + symbolic verifier = certified-correct output via verify-retry loop | No | `go run ./verified_reasoning/` |
+
 ### LLM-Powered (Requires API Key)
 
 | Example | Description | API Key | Run |
 |---|---|---|---|
 | **genkit_middleware_showcase** | Genkit 1.7 middleware composition (Retry, Fallback, Tool Approval) | Yes | `go run ./genkit_middleware_showcase/` |
-| **math_solver** | Small model reasoning: decompose math problems into verified micro-steps | Yes | `go run ./math_solver/` |
 
 ## Manglekit Features Demonstrated
 
@@ -69,6 +76,10 @@ Examples are ordered by complexity. Start with the basics and work your way up.
 | Session state recovery | `core.StateProvider` | session_recovery |
 | Supervisor (zero-trust) | `client.Supervise()` | hybrid_rag, mcp_tool_integration |
 | Function adapter | `adapters/func` | hybrid_rag |
+| Taint labels (security) | `core.Envelope.SecurityLabels` | jailbreak_proof_agent, hybrid_rag |
+| Tiered governance (T0-T3) | `core.Tier` | compliance_proof, devops_policy_gate |
+| AuditTrail rendering | `core.AuditTrail`, `NewAuditRecordFromTrail` | compliance_proof |
+| Symbolic verification | `engine.Query()` | verified_reasoning |
 
 ## Testing
 
@@ -88,10 +99,12 @@ manglekit-examples/
   goal_based_planning/         -- Datalog-driven action planning
   hybrid_rag/                  -- Multi-Tenant RAG with access control
   knowledge_graph_reasoning/   -- N-Triples knowledge graph reasoning
-  math_solver/                 -- Small model long reasoning (math)
   mcp_tool_integration/        -- Model Context Protocol integration
   ooda_document_generator/     -- Full 5-phase OODA loop
   session_recovery/            -- Durable state persistence
+  jailbreak_proof_agent/       -- T0 taint axiom blocks exfiltration
+  compliance_proof/            -- GDPR tiered Datalog with audit proof
+  verified_reasoning/          -- Symbolic verify-retry loop
 ```
 
 Each example has its own `package main` and can be run independently.
