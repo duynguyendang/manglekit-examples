@@ -45,8 +45,15 @@ Examples are ordered by complexity. Start with the basics and work your way up.
 | Example | Description | API Key | Run |
 |---|---|---|---|
 | **mcp_tool_integration** | Model Context Protocol server integration with policy-gated tool execution | No | `go run ./mcp_tool_integration/` |
-| **hybrid_rag** | Multi-tenant RAG with transitive access control, PII detection, and security tainting | No (mocks) | `go run ./hybrid_rag/` |
+| **hybrid_rag** | Multi-tenant RAG with transitive access control and egress tainting | No (mocks) | `go run ./hybrid_rag/` |
 | **ooda_document_generator** | Full 5-phase OODA loop with self-correction and Datalog policies | No | `go run ./ooda_document_generator/` |
+
+> **Note:** hybrid_rag's access-control and egress scenarios run on the full
+> `client.Supervise()` pre-check path: `ExecuteByName` recalls memory
+> (`RecallWithFacts` injects `memory_hit_N` metadata), the supervisor
+> pre-flight check evaluates the policy with the request's metadata, labels,
+> and `action_operation`/payload facts, and the action only executes on
+> PROCEED — enforcement happens in the kernel, not in demo code.
 
 ### Security & Verification
 

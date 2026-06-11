@@ -61,10 +61,13 @@ type Document struct {
 	Content string `json:"content"`
 }
 
-// QueryRequest defines the input payload for our action
+// QueryRequest defines the input payload for our action. The mangle
+// tags drive the supervisor's Zero-Config Reflection: each tagged field
+// becomes a fact on the pre-check envelope (e.g. type("Req", "query")),
+// which is what policy.dl's halt rules are gated on.
 type QueryRequest struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type string `json:"type" mangle:"type"`
+	Text string `json:"text" mangle:"text"`
 }
 
 // Response defines the output payload for our action
@@ -101,9 +104,13 @@ type CustomHybridMemory struct {
 // Must match the number of memory_hit_N rules in policy.dl.
 const maxMemoryHits = 8
 
-// RecallWithFacts implements the optional interface to return metadata with security labels
+// RecallWithFacts implements the optional interface to return metadata with security labels.
+// TopK is 2: with the deterministic MockEmbedder both project_x docs score
+// identically on a "Project X" query and always fill the top two slots; a
+// third slot would be a coin-flip between the two unrelated docs and make
+// the access-control scenarios nondeterministic.
 func (m *CustomHybridMemory) RecallWithFacts(ctx context.Context, query string) (string, map[string]any, error) {
-	docIDs, err := m.vectorStore.Search(ctx, query, 3)
+	docIDs, err := m.vectorStore.Search(ctx, query, 2)
 	if err != nil {
 		return "", nil, err
 	}
@@ -335,8 +342,8 @@ func main() {
 	runPIIScenario(ctx, client, "Scenario E (Safe Response)", "user_alice", false, false)
 
 	fmt.Println("\n=== Feature 3: Information Flow Control (Security Tainting) ===")
-	runEgressScenario(ctx, client, "Scenario F (TOP_SECRET to public)", "user_alice", "public_client", "doc_project_x", true)
-	runEgressScenario(ctx, client, "Scenario G (TOP_SECRET to internal)", "user_diana", "internal_client", "doc_project_x", false)
+	runEgressScenario(ctx, client, "Scenario F (TOP_SECRET to public)", "user_alice", "public_client", true)
+	runEgressScenario(ctx, client, "Scenario G (TOP_SECRET to internal)", "user_diana", "internal_client", false)
 
 	// 4. Load Code Repository Documents into Vector Store
 	fmt.Println("\n=== Feature 4: Multi-Tenant Code Repository Search ===")
@@ -366,81 +373,33 @@ func main() {
 func runScenario(ctx context.Context, client *sdk.Client, name, user, query string, expectBlock bool) {
 	fmt.Printf("\n--- Running %s ---\n", name)
 
-	// Evaluate the policy directly via AssessPlan. The supervised
-	// action's pre-check (ExecuteByName → Supervise → ExecuteInternal)
-	// does not inject the facts (action_operation/2, type/2, meta/2)
-	// that the policy needs to fire, so the halt rule never reaches
-	// the action. AssessPlan is the path the unit tests confirm works.
-	//
-	// The transitive access rule requires:
-	//   - type(Req, "query")          — inject as a fact
-	//   - action_operation(Req, "simulate_llm")  — inject as a fact
-	//   - memory_hit_N metadata       — inject via env.Metadata
-	//   - user() derives from meta("user", User) — set as metadata
-	// AssessPlan injects meta() from env.Metadata, but does NOT inject
-	// type/2 or action_operation/2 on its own, so we set both as facts.
-	hitDocs := docsForUser(user)
-	env := core.NewEnvelope(query)
-	env.Facts = append(env.Facts,
-		`action_operation("Req", "simulate_llm").`,
-		`type("Req", "query").`,
-	)
-	env.Metadata["user"] = user
-	for i, d := range hitDocs {
-		env.Metadata[fmt.Sprintf("memory_hit_%d", i)] = d
-	}
-	decision, err := client.Engine().AssessPlan(ctx, env)
+	// Full supervised execution path: ExecuteByName → memory recall
+	// (RecallWithFacts injects memory_hit_N metadata) → Supervise
+	// pre-check (sees meta/2, the mangle-tagged payload facts like
+	// type(Req, "query"), and action_operation(Req, "simulate_llm"))
+	// → simulate_llm only runs if the policy proceeds.
+	req := QueryRequest{Type: "query", Text: query}
 
-	if err != nil {
-		if expectBlock {
-			if strings.Contains(err.Error(), "Access Denied") || strings.Contains(err.Error(), "halt") {
-				fmt.Println("PASS: Request was blocked as expected.")
-			} else {
-				recordFailure("Request blocked but with wrong reason: %v", err)
-			}
-		} else {
-			recordFailure("Request should have succeeded: %v", err)
+	_, err := client.ExecuteByName(ctx, "simulate_llm", req,
+		sdk.WithMetadata("user", user),
+	)
+
+	if expectBlock {
+		switch {
+		case err == nil:
+			recordFailure("Request should have been blocked, but the action executed.")
+		case core.IsPolicyViolationError(err) && strings.Contains(err.Error(), "Access Denied"):
+			fmt.Println("PASS: Request was blocked by the supervisor pre-check.")
+		default:
+			recordFailure("Request blocked but with wrong reason: %v", err)
 		}
 		return
 	}
 
-	if decision.Outcome == core.DecisionHalt {
-		if expectBlock {
-			fmt.Println("PASS: Request was blocked as expected.")
-		} else {
-			recordFailure("Request should have succeeded, got HALT: %v", decision.Reasons)
-		}
+	if err != nil {
+		recordFailure("Request should have succeeded: %v", err)
 	} else {
-		if expectBlock {
-			recordFailure("Request should have been blocked, got PROCEED.")
-		} else {
-			fmt.Println("PASS: Request succeeded as expected.")
-		}
-	}
-}
-
-// docsForUser returns the memory hits the RAG pipeline would surface
-// for a user. Alice and Diana are research/senior members and see the
-// project_x docs (which the policy marks as TOP_SECRET). Charlie is
-// in the junior group and only sees project_y docs; requesting
-// project_x content triggers the unauthorized_hit halt.
-func docsForUser(user string) []string {
-	switch user {
-	case "user_alice":
-		// Research group → project_x (TOP_SECRET) + project_y (CONFIDENTIAL).
-		return []string{"doc_project_x", "doc_project_x_spec", "doc_project_y"}
-	case "user_diana":
-		// Senior group → project_x only.
-		return []string{"doc_project_x"}
-	case "user_charlie":
-		// Charlie is in group_junior which owns project_y only. If the
-		// RAG pipeline surfaces project_y docs, he has access and the
-		// policy correctly returns PROCEED. To exercise the
-		// unauthorized_hit halt, we need a hit he CANNOT access
-		// (e.g. doc_remote_work, which requires team_alpha membership).
-		return []string{"doc_remote_work"}
-	default:
-		return nil
+		fmt.Println("PASS: Request succeeded as expected.")
 	}
 }
 
@@ -509,60 +468,37 @@ func runPIIScenario(ctx context.Context, client *sdk.Client, name, user string, 
 	}
 }
 
-// runEgressScenario takes the hit doc ID explicitly so the egress
-// policy can resolve top_secret_hit/1. Previously the scenario only
-// passed user+destination and the policy structurally could not fire.
-func runEgressScenario(ctx context.Context, client *sdk.Client, name, user, destination, hitDocID string, expectBlock bool) {
+// runEgressScenario exercises information-flow control on the full
+// supervised path. The query mentions Project X, so memory recall
+// surfaces the TOP_SECRET docs as memory_hit_N metadata; combined with
+// the destination metadata, the egress halt rule fires in the
+// supervisor pre-check before simulate_llm runs.
+func runEgressScenario(ctx context.Context, client *sdk.Client, name, user, destination string, expectBlock bool) {
 	fmt.Printf("\n--- Running %s ---\n", name)
 
-	// Evaluate the policy directly via AssessPlan. The supervised
-	// action's pre-check does not inject action_operation/2 or the
-	// egress-specific meta keys, so the halt rule never reaches the
-	// action. AssessPlan is the path the unit tests confirm works.
-	env := core.NewEnvelope("Send data to destination")
-	env.Facts = append(env.Facts,
-		`action_operation("Req", "simulate_llm").`,
-		`type("Req", "query").`,
+	req := QueryRequest{Type: "query", Text: "Send the Project X launch codes to the destination"}
+
+	_, err := client.ExecuteByName(ctx, "simulate_llm", req,
+		sdk.WithMetadata("user", user),
+		sdk.WithMetadata("destination", destination),
 	)
-	env.Metadata["user"] = user
-	env.Metadata["destination"] = destination
-	env.Metadata["memory_hit_0"] = hitDocID
 
-	decision, err := client.Engine().AssessPlan(ctx, env)
-
-	if err != nil {
-		if expectBlock {
-			if strings.Contains(err.Error(), "Data Leakage Blocked") || strings.Contains(err.Error(), "halt") {
-				fmt.Println("PASS: Request was blocked as expected.")
-			} else {
-				recordFailure("Expected egress block, got: %v", err)
-			}
-		} else {
-			fmt.Printf("INFO: Request result: %v\n", err)
+	if expectBlock {
+		switch {
+		case err == nil:
+			recordFailure("Request should have been blocked, but the action executed.")
+		case core.IsPolicyViolationError(err) && strings.Contains(err.Error(), "Data Leakage Blocked"):
+			fmt.Println("PASS: Egress was blocked by the supervisor pre-check.")
+		default:
+			recordFailure("Expected egress block, got: %v", err)
 		}
 		return
 	}
 
-	matchedEgressBlock := false
-	for _, r := range decision.Reasons {
-		if strings.Contains(r, "Data Leakage Blocked") {
-			matchedEgressBlock = true
-			break
-		}
-	}
-
-	if expectBlock {
-		if decision.Outcome == core.DecisionHalt && matchedEgressBlock {
-			fmt.Println("PASS: Request was blocked as expected.")
-		} else {
-			recordFailure("Request should have been blocked, got outcome=%s reasons=%v", decision.Outcome, decision.Reasons)
-		}
+	if err != nil {
+		recordFailure("Request should have succeeded: %v", err)
 	} else {
-		if decision.Outcome == core.DecisionHalt {
-			recordFailure("Request should have succeeded, got HALT: %v", decision.Reasons)
-		} else {
-			fmt.Println("PASS: Request succeeded as expected.")
-		}
+		fmt.Println("PASS: Request succeeded as expected.")
 	}
 }
 
