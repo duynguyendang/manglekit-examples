@@ -3,7 +3,7 @@ module github.com/duynguyendang/manglekit-examples
 go 1.25.1
 
 require (
-	github.com/duynguyendang/manglekit v0.0.0-20251221135144-55f5a119e1b6
+	github.com/duynguyendang/manglekit v0.3.0
 	github.com/firebase/genkit/go v1.7.0
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
