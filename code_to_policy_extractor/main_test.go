@@ -114,7 +114,7 @@ func TestPolicyEngine_PassingPR(t *testing.T) {
 	}
 
 	facts := buildFacts(passingPR)
-	if err := client.LoadFacts(facts); err != nil {
+	if err := client.LoadFacts(ctx, facts); err != nil {
 		t.Fatalf("Failed to load facts: %v", err)
 	}
 
@@ -155,7 +155,7 @@ func TestPolicyEngine_ViolatingPR(t *testing.T) {
 	}
 
 	facts := buildFacts(violatingPR)
-	if err := client.LoadFacts(facts); err != nil {
+	if err := client.LoadFacts(ctx, facts); err != nil {
 		t.Fatalf("Failed to load facts: %v", err)
 	}
 

@@ -152,7 +152,9 @@ func main() {
 		}
 	}
 
-	client.LoadFacts(facts)
+	if err := client.LoadFacts(ctx, facts); err != nil {
+		log.Fatalf("Failed to load PR facts: %v", err)
+	}
 	fmt.Println("📊 Loaded PR facts into policy engine")
 	fmt.Println()
 
@@ -206,7 +208,9 @@ func main() {
 		}
 	}
 
-	client.LoadFacts(violatingFacts)
+	if err := client.LoadFacts(ctx, violatingFacts); err != nil {
+		log.Fatalf("Failed to load violating PR facts: %v", err)
+	}
 
 	fmt.Println("🔍 Running architecture lint check...")
 	violatingEnv := core.NewEnvelope(violatingPR)

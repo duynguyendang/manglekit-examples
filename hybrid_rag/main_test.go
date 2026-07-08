@@ -22,18 +22,12 @@ func noopPIIScan(_ context.Context, _ []any) ([][]any, error) {
 }
 
 // registerNoopPIIScan registers the no-op pii_scan callback on the
-// engine so the policy's reference to pii_scan resolves. Returns
-// false if the engine does not expose RegisterExternalPredicate.
+// engine so the policy's reference to pii_scan resolves. Fails the
+// test if the engine does not support RegisterExternalPredicate.
 func registerNoopPIIScan(t *testing.T, client *sdk.Client) {
 	t.Helper()
-	if reg, ok := client.Engine().(interface {
-		RegisterExternalPredicate(string, func(context.Context, []any) ([][]any, error)) error
-	}); ok {
-		if err := reg.RegisterExternalPredicate("pii_scan", noopPIIScan); err != nil {
-			t.Fatalf("Failed to register pii_scan: %v", err)
-		}
-	} else {
-		t.Fatal("engine does not support RegisterExternalPredicate")
+	if err := client.RegisterExternalPredicate("pii_scan", noopPIIScan); err != nil {
+		t.Fatalf("Failed to register pii_scan: %v", err)
 	}
 }
 
@@ -57,13 +51,7 @@ func TestTransitiveAccessControl(t *testing.T) {
 	// Register pii_scan BEFORE loading the policy, then load via
 	// LoadFromSource so the engine auto-emits the external Decl.
 	registerNoopPIIScan(t, client)
-	loader, ok := client.Engine().(interface {
-		LoadFromSource(context.Context, string) error
-	})
-	if !ok {
-		t.Fatal("engine does not support LoadFromSource")
-	}
-	if err := loader.LoadFromSource(ctx, string(policyData)); err != nil {
+	if err := client.LoadFromSource(ctx, string(policyData)); err != nil {
 		t.Fatalf("Failed to load policy: %v", err)
 	}
 
@@ -75,7 +63,7 @@ func TestTransitiveAccessControl(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to parse access_graph.nq: %v", err)
 	}
-	if err := client.Engine().LoadFacts(facts); err != nil {
+	if err := client.Engine().LoadFacts(ctx, facts); err != nil {
 		t.Fatalf("Failed to load graph facts: %v", err)
 	}
 
@@ -122,13 +110,7 @@ func TestSupervisedActionExecution(t *testing.T) {
 		t.Fatalf("Failed to read policy.dl: %v", err)
 	}
 	registerNoopPIIScan(t, client)
-	loader, ok := client.Engine().(interface {
-		LoadFromSource(context.Context, string) error
-	})
-	if !ok {
-		t.Fatal("engine does not support LoadFromSource")
-	}
-	if err := loader.LoadFromSource(ctx, string(policyData)); err != nil {
+	if err := client.LoadFromSource(ctx, string(policyData)); err != nil {
 		t.Fatalf("Failed to load policy: %v", err)
 	}
 
@@ -140,7 +122,7 @@ func TestSupervisedActionExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to parse access_graph.nq: %v", err)
 	}
-	if err := client.Engine().LoadFacts(facts); err != nil {
+	if err := client.Engine().LoadFacts(ctx, facts); err != nil {
 		t.Fatalf("Failed to load graph facts: %v", err)
 	}
 

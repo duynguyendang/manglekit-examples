@@ -13,6 +13,8 @@ Decl user(User).
 Decl type(Entity, Value).
 Decl allow(Req).
 Decl unauthorized_hit(Req, User).
+Decl content(Output, Text).
+Decl contains_pii(Text).
 
 % 1. Requirement
 requires(Req, "memory") :- type(Req, "query").
@@ -89,24 +91,29 @@ halt(Req, "Data Leakage Blocked: top_secret data cannot flow to public_client") 
 %
 % Scenarios D/E are exercised via the post-check (output supervision)
 % path, not the AssessPlan pre-check. The post-check uses the engine's
-% external-predicate hook to scan LLM output. pii_scan(Output) is
-% registered in main.go and returns one row when the output contains
-% a US SSN (NNN-NN-NNNN). retry/2 is the steering response consumed
-% by the supervised action runtime; the wrapper converts it into
-% core.DecisionRetry so the verify-retry loop re-invokes the LLM.
+% external-predicate hook (pii_scan/1, registered in main.go) to scan
+% LLM output for a US SSN (NNN-NN-NNNN). The engine's EvaluateSteering
+% queries the unary retry(Hint) form; the wrapped action converts that
+% into core.DecisionRetry so the verify-retry loop re-invokes the LLM.
 %
 % NOTE: Do NOT write `Decl pii_scan(Output)` here. The engine's
 % LoadFromSource path auto-emits the `Decl ... external()` declaration
 % for any registered external predicate; a manual Decl will be
 % rejected as a redeclaration.
+%
+% PII detection is scoped to THIS request's output atom
+% (content("Output", T) emitted by the supervisor's Zero-Config
+% Reflection post-check). The join with pii_scan(T) binds T to the
+% current output text, so a pii_scan fact persisted from a prior
+% request cannot fire on an unrelated output.
 
-contains_pii(H) :- pii_scan(H).
+contains_pii(T) :- content("Output", T), pii_scan(T).
 
 % Post-check: halt on PII in output. The Reflect path evaluates
 % halt("Output", ...) rules after the inner action completes.
 halt("Output", "PII detected in output: RETRY required, scrub SSN") :-
     contains_pii(_).
 
-retry(Req, "PII detected: RETRY required, scrub SSN from output") :-
-    type(Req, "query"),
+% Unary retry(Hint) — matches EvaluateSteering's arity-1 fallback query.
+retry("PII detected: RETRY required, scrub SSN from output") :-
     contains_pii(_).

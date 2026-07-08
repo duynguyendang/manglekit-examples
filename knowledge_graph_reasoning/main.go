@@ -49,7 +49,7 @@ func main() {
 		log.Fatalf("Failed to parse N-Triples: %v", err)
 	}
 
-	if err := client.LoadFacts(facts); err != nil {
+	if err := client.LoadFacts(ctx, facts); err != nil {
 		log.Fatalf("Failed to load facts: %v", err)
 	}
 	fmt.Printf("Loaded %d facts from ontology.nt\n\n", len(facts))
@@ -142,7 +142,7 @@ func runQueryWithAudit(ctx context.Context, facts []string) {
 	if err := sys.Engine().LoadPolicy(ctx, knowledgePolicy); err != nil {
 		log.Fatalf("Failed to load policy: %v", err)
 	}
-	if err := sys.Engine().LoadFacts(facts); err != nil {
+	if err := sys.Engine().LoadFacts(ctx, facts); err != nil {
 		log.Fatalf("Failed to load facts: %v", err)
 	}
 

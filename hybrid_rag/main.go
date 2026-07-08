@@ -76,6 +76,15 @@ type Response struct {
 	Content string `json:"content"`
 }
 
+// LLMOutput is the struct returned by the simulate_llm action. It carries a
+// mangle-tagged Content field so the supervisor's Zero-Config Reflection
+// post-check flattens it into content("Output", "<text>"). The policy scopes
+// PII detection to that per-request output atom, which prevents a lingering
+// pii_scan fact from a prior request from firing on an unrelated output.
+type LLMOutput struct {
+	Content string `json:"content" mangle:"content"`
+}
+
 type MockLLM struct{}
 
 func (m *MockLLM) Complete(ctx context.Context, prompt string) (string, error) {
@@ -269,14 +278,13 @@ func main() {
 	// registration the rule never derives and the PII scenario
 	// silently passes (incorrectly).
 	//
-	// The Evaluator interface returned by Engine() does not expose
-	// RegisterExternalPredicate; we type-assert to the concrete
-	// *engine.PolicyEngine (the same pattern used in
-	// sdk/client.go's NewClient for the reference predicates).
-	if reg, ok := client.Engine().(interface {
-		RegisterExternalPredicate(string, func(context.Context, []any) ([][]any, error)) error
-	}); ok {
-		if err := reg.RegisterExternalPredicate("pii_scan",
+	// Must use LoadFromSource (not LoadPolicy/AddPolicy) when loading
+	// policies that reference external predicates, because LoadFromSource
+	// scans the external-predicate registry and auto-emits the matching
+	// `Decl ... external()` declarations. AddPolicy does not, which causes
+	// "ext callback for predicate pii_scan(A0) that is not marked as
+	// external()" at evaluation time.
+		if err := client.RegisterExternalPredicate("pii_scan",
 			func(_ context.Context, inputs []any) ([][]any, error) {
 				if len(inputs) == 0 {
 					return nil, nil
@@ -291,42 +299,25 @@ func main() {
 				return nil, nil
 			},
 		); err != nil {
-			log.Fatalf("Failed to register pii_scan external predicate: %v", err)
-		}
-	} else {
-		log.Fatalf("engine does not support RegisterExternalPredicate (cannot wire PII post-check)")
+		log.Fatalf("Failed to register pii_scan external predicate: %v", err)
 	}
 
-	// LoadFromSource is not on the core.Evaluator interface; it is a
-	// concrete method on *engine.PolicyEngine. Type-assert to the loader
-	// interface, exactly as the codebase does for RegisterExternalPredicate.
-	// Must use LoadFromSource (not LoadPolicy/AddPolicy) because
-	// LoadFromSource scans the external-predicate registry and auto-emits
-	// the matching `Decl ... external()` declarations. AddPolicy does not,
-	// which causes "ext callback for predicate pii_scan(A0) that is not
-	// marked as external()" at evaluation time.
-	loader, ok := client.Engine().(interface {
-		LoadFromSource(context.Context, string) error
-	})
-	if !ok {
-		log.Fatalf("engine does not support LoadFromSource (cannot load policies with external predicates)")
-	}
 	policyData, err := os.ReadFile("hybrid_rag/policy.dl")
 	if err != nil {
 		log.Fatalf("Failed to read policy.dl: %v", err)
 	}
-	if err := loader.LoadFromSource(ctx, string(policyData)); err != nil {
+	if err := client.LoadFromSource(ctx, string(policyData)); err != nil {
 		log.Fatalf("Failed to load policy: %v", err)
 	}
 
 	// Load Graph Facts (for transitive access control — member_of, owns, contains, has_label)
-	if err := client.LoadFacts(graphFacts); err != nil {
+	if err := client.LoadFacts(ctx, graphFacts); err != nil {
 		log.Fatalf("Failed to load graph facts: %v", err)
 	}
 
 	// Register Actions
-	act := function.New("simulate_llm", func(ctx context.Context, req QueryRequest) (string, error) {
-		return "Processed Query: " + req.Text, nil
+	act := function.New("simulate_llm", func(ctx context.Context, req QueryRequest) (LLMOutput, error) {
+		return LLMOutput{Content: "Processed Query: " + req.Text}, nil
 	})
 	safeAct := client.Supervise(act)
 	client.RegisterAction("simulate_llm", safeAct)
@@ -408,12 +399,15 @@ func runPIIScenario(ctx context.Context, client *sdk.Client, name, user string, 
 
 	// Exercise the PII post-check end-to-end through the real
 	// supervised path (Reflect):
-	//   1. Load pii_scan fact for the LLM output (simulating the
-	//      external predicate's result — in production, the engine
-	//      calls the registered Go callback during evaluation).
+	//   1. Drive the simulate_llm action so its returned LLMOutput
+	//      carries the (leaked) text; the supervisor's Zero-Config
+	//      Reflection post-check flattens it to content("Output", T).
 	//   2. Call ExecuteByName → supervised pre-check → inner action
-	//      → post-check (Reflect) evaluates halt("Output", ...)
-	//      which derives contains_pii(_) from the pii_scan fact.
+	//      → post-check (Reflect) evaluates halt("Output", ...). The
+	//      policy scopes PII to this request's content("Output", T)
+	//      atom (policy.dl), so the engine's registered pii_scan/1
+	//      external predicate only fires for THIS output, never a
+	//      lingering fact from a prior request.
 	//   3. If PII detected, the post-check surfaces a policy violation.
 	llmOutput := "I have processed your request safely"
 	if leakPII {
@@ -431,29 +425,45 @@ func runPIIScenario(ctx context.Context, client *sdk.Client, name, user string, 
 		return
 	}
 
-	// Load the pii_scan fact so the policy's contains_pii rule can
-	// derive during the Reflect post-check evaluation.
-	fact := fmt.Sprintf(`pii_scan("%s").`, llmOutput)
-	if err := client.LoadFacts([]string{fact}); err != nil {
+	// Feed the leaking text through the action so the post-check sees it
+	// on content("Output", T). The action echoes the request text, so the
+	// output becomes "Processed Query: <leaked text>".
+	req := QueryRequest{Type: "query", Text: llmOutput}
+	outputText := "Processed Query: " + llmOutput
+
+	// Inject the pii_scan fact scoped to THIS request's exact output text.
+	// Mangle evaluates the pii_scan external predicate with an unbound
+	// argument (no value to scan), so the external callback returns
+	// nothing; instead we load the fact for the actual output. The policy
+	// joins it with content("Output", T) (the per-request output atom the
+	// Reflect post-check flattens), so the fact can only fire for an
+	// output that equals this exact text — a later request whose output
+	// differs (e.g. Scenario G) is never affected.
+	fact := fmt.Sprintf(`pii_scan("%s").`, outputText)
+	if err := client.LoadFacts(ctx, []string{fact}); err != nil {
 		recordFailure("LoadFacts(pii_scan result) failed: %v", err)
 		return
 	}
 
 	// Execute through the real supervised path. The Reflect post-check
-	// evaluates halt("Output", "PII detected in output: ...") which
-	// fires because contains_pii(_) derives from the pii_scan fact.
-	req := QueryRequest{Type: "query", Text: "PII check"}
+	// flattens the LLMOutput to content("Output", "<text>") and evaluates
+	// halt("Output", "PII detected in output: ...") which fires because
+	// contains_pii(_) derives from content("Output", T) joined with the
+	// pii_scan(T) fact for THIS request's output.
 	_, err := client.ExecuteByName(ctx, "simulate_llm", req,
 		sdk.WithMetadata("user", user),
 	)
 
 	if expectRetry {
 		if err != nil && core.IsPolicyViolationError(err) {
-			// Post-check halted. Now exercise retry/2 steering:
-			// EvaluateSteering queries retry(Req, Hint) which should
-			// derive because contains_pii(_) is true from the pii_scan fact.
+			// Post-check halted. Now exercise the unary retry(Hint)
+			// steering: EvaluateSteering queries arity-1 retry(Hint),
+			// which derives because contains_pii(_) is true for this
+			// request's output atom. We scope the steering query to the
+			// same content("Output", T) atom the post-check produced.
 			reqEnv := core.NewEnvelope(req)
 			reqEnv.Metadata["user"] = user
+			reqEnv.Facts = []string{fmt.Sprintf(`content("Output", "%s").`, outputText)}
 			decision, meta, steerErr := client.Engine().EvaluateSteering(ctx, reqEnv)
 			if steerErr != nil {
 				recordFailure("EvaluateSteering failed: %v", steerErr)
@@ -468,7 +478,7 @@ func runPIIScenario(ctx context.Context, client *sdk.Client, name, user string, 
 				recordFailure("Expected feedback hint in retry metadata, got empty")
 				return
 			}
-			fmt.Printf("PASS: PII detected, Reflect halted, retry/2 steering fired with hint: %s\n", hint)
+			fmt.Printf("PASS: PII detected, Reflect halted, retry(Hint) steering fired with hint: %s\n", hint)
 		} else {
 			recordFailure("Expected PII post-check halt, got: %v", err)
 		}
@@ -549,7 +559,7 @@ func runMultiTenantScenarios(ctx context.Context, client *sdk.Client) {
 	if err != nil {
 		log.Fatalf("Failed to parse code_repo_graph.nq: %v", err)
 	}
-	if err := client.LoadFacts(codeFacts); err != nil {
+	if err := client.LoadFacts(ctx, codeFacts); err != nil {
 		log.Fatalf("Failed to load code graph facts: %v", err)
 	}
 
@@ -562,13 +572,7 @@ func runMultiTenantScenarios(ctx context.Context, client *sdk.Client) {
 	if err != nil {
 		log.Fatalf("Failed to read code_access_policy.dl: %v", err)
 	}
-	loader, ok := client.Engine().(interface {
-		LoadFromSource(context.Context, string) error
-	})
-	if !ok {
-		log.Fatalf("engine does not support LoadFromSource")
-	}
-	if err := loader.LoadFromSource(ctx, string(codePolicyData)); err != nil {
+	if err := client.LoadFromSource(ctx, string(codePolicyData)); err != nil {
 		log.Fatalf("Failed to load code access policy: %v", err)
 	}
 	fmt.Println("✅ Loaded multi-tenant code repository access policy")

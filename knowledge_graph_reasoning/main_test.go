@@ -36,7 +36,7 @@ func loadTestClient(t *testing.T) *sdk.Client {
 	if err != nil {
 		t.Fatalf("Failed to parse N-Triples: %v", err)
 	}
-	if err := client.LoadFacts(facts); err != nil {
+	if err := client.LoadFacts(ctx, facts); err != nil {
 		t.Fatalf("Failed to load facts: %v", err)
 	}
 
