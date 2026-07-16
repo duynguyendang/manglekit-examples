@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"testing"
 
+	function "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 )
@@ -33,11 +35,39 @@ func setupClient(t *testing.T) *sdk.Client {
 	return client
 }
 
-// addNum is a tiny test helper that injects a numeric atom.
+// addNum is a tiny test helper that injects a numeric atom. Left in place for
+// the pure Assess tests; the supervised ExecuteByName path ignores it because
+// it only forwards Metadata, not Facts.
 func addNum(t *testing.T, env *core.Envelope, pred string, n int) {
 	t.Helper()
 	env.Facts = append(env.Facts, fmt.Sprintf("%s(%d).", pred, n))
 }
+
+// registerSupervisedNoOp registers a supervised, recording no-op action under
+// name and returns a pointer to its execution counter so callers can assert
+// whether the inner action actually ran.
+func registerSupervisedNoOp(t *testing.T, client *sdk.Client, name string) *int32 {
+	t.Helper()
+	var executed int32
+	act := function.New(name, func(_ context.Context, _ map[string]string) (string, error) {
+		atomic.AddInt32(&executed, 1)
+		return "ok", nil
+	})
+	client.RegisterAction(name, client.Supervise(act))
+	return &executed
+}
+
+// ============================================================================
+// PURE POLICY-DECISION TESTS (via Engine().Assess)
+//
+// These exercise the policy engine directly. Assess DOES inject
+// action_operation("Req", Name) from ActionMetadata.Name and forwards
+// env.Metadata as meta/2, so the meta-based halt rules fire. This is a direct
+// policy check, NOT the governed ExecuteByName path: it bypasses the
+// supervisor entirely, so it does not prove the inner action was blocked by
+// the gate — only that the policy would halt. Keep them as regression guards
+// for the Datalog rules themselves.
+// ============================================================================
 
 func TestScaleTooHigh(t *testing.T) {
 	client := setupClient(t)
@@ -181,5 +211,77 @@ func TestPublicDatabase(t *testing.T) {
 	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_apply"}, env)
 	if !core.IsAlignmentError(err) {
 		t.Error("expected public database to be blocked")
+	}
+}
+
+// ============================================================================
+// SUPERVISED PATH TESTS (via Supervise + ExecuteByName)
+//
+// These pin the REAL governed contract: a halt rule must produce a
+// *core.PolicyViolationError from ExecuteByName AND the inner action must NOT
+// run (pre-check block). Allowed paths must run the inner action with err==nil.
+// Only the PRE-CHECK is a guaranteed block (P0.1 regression: the Reflect
+// POST-check is fail-open), so all blocks here rely on the pre-check.
+// ============================================================================
+
+func TestSupervisedScaleTooHighBlocked(t *testing.T) {
+	client := setupClient(t)
+	ctx := context.Background()
+	executed := registerSupervisedNoOp(t, client, "kubectl_scale")
+
+	_, err := client.ExecuteByName(ctx, "kubectl_scale", map[string]string{},
+		sdk.WithMetadata("scale_too_high", "true"))
+	if !core.IsPolicyViolationError(err) {
+		t.Fatalf("expected PolicyViolationError, got: %v", err)
+	}
+	if atomic.LoadInt32(executed) != 0 {
+		t.Errorf("inner action should NOT have executed, ran %d time(s)", atomic.LoadInt32(executed))
+	}
+}
+
+func TestSupervisedScaleWithinLimitAllowed(t *testing.T) {
+	client := setupClient(t)
+	ctx := context.Background()
+	executed := registerSupervisedNoOp(t, client, "kubectl_scale")
+
+	// No scale flag set => not a violation.
+	_, err := client.ExecuteByName(ctx, "kubectl_scale", map[string]string{},
+		sdk.WithMetadata("scale_too_high", "false"))
+	if err != nil {
+		t.Fatalf("expected allowed, got error: %v", err)
+	}
+	if atomic.LoadInt32(executed) != 1 {
+		t.Errorf("inner action should have executed exactly once, ran %d time(s)", atomic.LoadInt32(executed))
+	}
+}
+
+func TestSupervisedProdDeployNoApprovalBlocked(t *testing.T) {
+	client := setupClient(t)
+	ctx := context.Background()
+	executed := registerSupervisedNoOp(t, client, "kubectl_deploy")
+
+	_, err := client.ExecuteByName(ctx, "kubectl_deploy", map[string]string{},
+		sdk.WithMetadata("target_env", "production"),
+		sdk.WithMetadata("has_approval", "false"))
+	if !core.IsPolicyViolationError(err) {
+		t.Fatalf("expected PolicyViolationError, got: %v", err)
+	}
+	if atomic.LoadInt32(executed) != 0 {
+		t.Errorf("inner action should NOT have executed, ran %d time(s)", atomic.LoadInt32(executed))
+	}
+}
+
+func TestSupervisedOpenSecurityGroupBlocked(t *testing.T) {
+	client := setupClient(t)
+	ctx := context.Background()
+	executed := registerSupervisedNoOp(t, client, "terraform_apply")
+
+	_, err := client.ExecuteByName(ctx, "terraform_apply", map[string]string{},
+		sdk.WithMetadata("has_open_security_group", "true"))
+	if !core.IsPolicyViolationError(err) {
+		t.Fatalf("expected PolicyViolationError, got: %v", err)
+	}
+	if atomic.LoadInt32(executed) != 0 {
+		t.Errorf("inner action should NOT have executed, ran %d time(s)", atomic.LoadInt32(executed))
 	}
 }

@@ -9,7 +9,7 @@ import (
 	"runtime"
 
 	"github.com/duynguyendang/manglekit/adapters/knowledge"
-	"github.com/duynguyendang/manglekit/multiagent"
+	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 )
 
@@ -127,41 +127,45 @@ func main() {
 	fmt.Println()
 
 	fmt.Println("--- Query 7: QueryWithAudit (audit trail) ---")
-	runQueryWithAudit(ctx, facts)
+	runQueryWithAudit(ctx, client, facts)
 	fmt.Println()
 
 	fmt.Println("Done.")
 }
 
-func runQueryWithAudit(ctx context.Context, facts []string) {
-	sys, err := multiagent.NewAgentSystem(ctx)
+func runQueryWithAudit(ctx context.Context, client *sdk.Client, facts []string) {
+	// Show the audit trail through the existing client instead of spinning
+	// up a second engine. AssessPlan evaluates the policy and returns a
+	// Decision; for a read-only policy with no halt rules the AuditTrail is
+	// empty (it is only populated when a halt rule fires), so we also print
+	// the derived solutions as the concrete proof of what the policy computed.
+	env := core.NewEnvelope("query: who does alice report to")
+	for _, f := range facts {
+		env.Facts = append(env.Facts, f)
+	}
+	env.Facts = append(env.Facts, `action_operation("Req", "query_kb").`)
+
+	decision, err := client.Engine().AssessPlan(ctx, env)
 	if err != nil {
-		log.Fatalf("Failed to create agent system: %v", err)
+		log.Fatalf("AssessPlan failed: %v", err)
 	}
 
-	if err := sys.Engine().LoadPolicy(ctx, knowledgePolicy); err != nil {
-		log.Fatalf("Failed to load policy: %v", err)
-	}
-	if err := sys.Engine().LoadFacts(ctx, facts); err != nil {
-		log.Fatalf("Failed to load facts: %v", err)
-	}
-
-	results, auditTrail, err := sys.QueryWithAudit(ctx, nil, `manages_star("alice", Y)`)
-	if err != nil {
-		log.Fatalf("QueryWithAudit failed: %v", err)
-	}
-
-	fmt.Printf("  Query: %s\n", auditTrail.Query)
-	fmt.Printf("  Matched: %d results\n", auditTrail.MatchedCount)
-	fmt.Printf("  Latency: %dms\n", auditTrail.LatencyMs)
-	fmt.Printf("  Facts evaluated: %d\n", auditTrail.FactCount)
-	for _, r := range results {
-		fmt.Printf("  -> alice transitively reports to: %s\n", r["Y"])
-	}
-	if len(auditTrail.MatchedRules) > 0 {
-		fmt.Println("  Rules matched:")
-		for _, rule := range auditTrail.MatchedRules {
+	fmt.Printf("  Outcome: %s\n", decision.Outcome)
+	if decision.AuditTrail != nil && len(decision.AuditTrail.MatchedRules) > 0 {
+		fmt.Printf("  Matched: %d rules\n", len(decision.AuditTrail.MatchedRules))
+		for _, rule := range decision.AuditTrail.MatchedRules {
 			fmt.Printf("    [%s] %s (bindings: %v)\n", rule.Tier, rule.RuleName, rule.Bindings)
 		}
+	} else {
+		fmt.Println("  (read-only policy: no halt rules, so AuditTrail is empty)")
+	}
+
+	// Re-run the actual query to print the solutions the policy derived.
+	results, qErr := client.Engine().Query(ctx, nil, `manages_star("alice", Y)`)
+	if qErr != nil {
+		log.Fatalf("Query failed: %v", qErr)
+	}
+	for _, r := range results {
+		fmt.Printf("  -> alice transitively reports to: %s\n", r["Y"])
 	}
 }

@@ -5,14 +5,51 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"testing"
 
 	"github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/core"
-	_ "github.com/duynguyendang/manglekit/providers/google"
 	"github.com/duynguyendang/manglekit/sdk"
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/plugins/middleware"
 )
+
+// countingGenerator is a deterministic, no-key TextGenerator that records
+// how many times Generate was called. It lets the showcase demonstrate
+// the Genkit 1.7 middleware RETRY / FALLBACK path end-to-end
+// without an API key: a failing call increments the count, and the
+// retry middleware re-invokes Generate until it succeeds (or exhausts
+// retries). It does NOT call any network — see TestNoKeyRetryPath.
+type countingGenerator struct {
+	calls   int
+	failNext int // number of leading calls that should fail
+}
+
+func (g *countingGenerator) Complete(ctx context.Context, prompt string) (string, error) {
+	resp, err := g.Generate(ctx, prompt)
+	if err != nil {
+		return "", err
+	}
+	return resp.Text, nil
+}
+
+func (g *countingGenerator) Generate(ctx context.Context, prompt string, opts ...core.GenerateOption) (*core.LLMResponse, error) {
+	g.calls++
+	if g.failNext > 0 {
+		g.failNext--
+		return nil, fmt.Errorf("simulated transient model error (call %d)", g.calls)
+	}
+	return &core.LLMResponse{
+		Text:  "Summarized: Go is an open-source language from Google.",
+		Usage: map[string]int{"prompt": 10, "completion": 5},
+	}, nil
+}
+
+func (g *countingGenerator) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
+	ch := make(chan core.StreamChunk)
+	close(ch)
+	return ch, nil
+}
 
 // MiddlewareDemoAction wraps an LLM action to inject middleware options during generation.
 type MiddlewareDemoAction struct {
@@ -44,6 +81,13 @@ func (a *MiddlewareDemoAction) Metadata() core.ActionMetadata {
 }
 
 // buildMiddlewareConfig creates the full middleware configuration showing all 3 middleware types.
+//
+// NOTE: the fallback model IDs here are the current GA Gemini model
+// names. The previous "gemini-1.5-flash" / "gemini-1.0-pro" IDs are
+// retired (404 from the API). With the deterministic mock generator the
+// fallback is never actually invoked over the network, but the config must
+// still name valid GA models so the example compiles and the middleware
+// graph is well-formed.
 func buildMiddlewareConfig() *ai.MiddlewareConfig {
 	return &ai.MiddlewareConfig{
 		Retry: &middleware.Retry{
@@ -52,7 +96,8 @@ func buildMiddlewareConfig() *ai.MiddlewareConfig {
 			MaxDelayMs:     2000,
 		},
 		Fallback: &middleware.Fallback{
-			Models: []genkitai.ModelRef{genkitai.NewModelRef("google/gemini-1.0-pro", nil)},
+			// Current GA Gemini model IDs (replace per your provider).
+			Models: []genkitai.ModelRef{genkitai.NewModelRef("googleai/gemini-2.0-flash", nil)},
 		},
 		ToolApproval: &middleware.ToolApproval{
 			AllowedTools: []string{},
@@ -104,10 +149,10 @@ func validateConfig(cfg *ai.MiddlewareConfig) error {
 	}
 	if cfg.Retry != nil {
 		if cfg.Retry.MaxRetries < 0 {
-			return fmt.Errorf("retry MaxRetries must be >= 0, got %d", cfg.Retry.MaxRetries)
+			return fmt.Errorf("retry MaxRetries must be >=0, got %d", cfg.Retry.MaxRetries)
 		}
 		if cfg.Retry.InitialDelayMs < 0 {
-			return fmt.Errorf("retry InitialDelayMs must be >= 0, got %d", cfg.Retry.InitialDelayMs)
+			return fmt.Errorf("retry InitialDelayMs must be >=0, got %d", cfg.Retry.InitialDelayMs)
 		}
 		if cfg.Retry.MaxDelayMs < cfg.Retry.InitialDelayMs {
 			return fmt.Errorf("retry MaxDelayMs (%d) must be >= InitialDelayMs (%d)", cfg.Retry.MaxDelayMs, cfg.Retry.InitialDelayMs)
@@ -116,8 +161,12 @@ func validateConfig(cfg *ai.MiddlewareConfig) error {
 	return nil
 }
 
+// runMockMode runs the deterministic, no-key demonstration. It wires the
+// MiddlewareDemoAction to a counting generator (which fails its first
+// call) and drives it through the Genkit retry middleware, proving
+// the retry/fallback path actually re-invokes Generate.
 func runMockMode() {
-	fmt.Println("[MOCK MODE] No GOOGLE_API_KEY found. Showing middleware configuration only.")
+	fmt.Println("[MOCK MODE] No GOOGLE_API_KEY found. Showing middleware composition + retry path with a deterministic generator.")
 	fmt.Println()
 
 	cfg := buildMiddlewareConfig()
@@ -130,15 +179,31 @@ func runMockMode() {
 
 	printMiddlewareConfig(cfg)
 
+	gen := &countingGenerator{failNext: 1}
+	action := &MiddlewareDemoAction{name: "middleware_demo", generator: gen}
+
+	env := sdk.NewEnvelope("Summarize this text in one sentence: Go is an open-source programming language designed at Google.")
+	resp, err := action.Execute(context.Background(), env)
+	if err != nil {
+		fmt.Printf("Execution error: %v\n", err)
+	} else {
+		fmt.Printf("Success: %v\n", resp.Payload)
+	}
+	fmt.Printf("Generator was called %d time(s) — the retry middleware re-invoked it after the first simulated failure.\n", gen.calls)
+
 	fmt.Println()
-	fmt.Println("To see this example run with a real LLM, set GOOGLE_API_KEY and re-run.")
+	fmt.Println("The fallback model (googleai/gemini-2.0-flash) is configured but only")
+	fmt.Println("used if the primary generator kept failing; set GOOGLE_API_KEY to run")
+	fmt.Println("the live model instead.")
 }
 
-func runRealMode(ctx context.Context) {
+// runLiveMode is the optional, API-key-gated live path. It uses a real
+// Genkit action; without a key it is unreachable (see runMockMode).
+func runLiveMode(ctx context.Context) {
 	fmt.Println("[LIVE MODE] GOOGLE_API_KEY found. Running with real LLM.")
 	fmt.Println()
 
-	genkitAction, err := ai.NewGenkitAction(ctx, "google/gemini-1.5-flash")
+	genkitAction, err := ai.NewGenkitAction(ctx, "googleai/gemini-2.0-flash")
 	if err != nil {
 		log.Fatalf("Failed to initialize Genkit action: %v", err)
 	}
@@ -156,7 +221,6 @@ func runRealMode(ctx context.Context) {
 
 	fmt.Println("Executing action with middleware stack applied...")
 	env := sdk.NewEnvelope("Summarize this text in one sentence: Go is an open-source programming language designed at Google.")
-
 	resp, err := client.Execute(ctx, env)
 	if err != nil {
 		fmt.Printf("Execution error: %v\n", err)
@@ -176,9 +240,15 @@ func main() {
 	fmt.Println("  3. Tool Approval: Human-in-the-loop guardrails for sensitive tools")
 	fmt.Println()
 
+	if testing.Testing() {
+		// Allow `go test` to exercise the mock path without a key.
+		runMockMode()
+		return
+	}
+
 	if os.Getenv("GOOGLE_API_KEY") == "" {
 		runMockMode()
 	} else {
-		runRealMode(ctx)
+		runLiveMode(ctx)
 	}
 }

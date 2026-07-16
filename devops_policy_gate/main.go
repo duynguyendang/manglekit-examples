@@ -2,11 +2,26 @@
 // security gates: numeric replica limits, business-hour restrictions on
 // destructive operations, and approval/permission flags.
 //
-// The Mangle analyzer rejects cross-fact :lt/:lte built-ins, so the
-// numeric comparisons themselves are performed in Go. The caller
-// pre-computes the boolean outcome (business_hours(H), scale_too_high(N),
-// scale_too_low(N)) and the policy just pattern-matches. This is the
-// honest boundary: the Datalog layer is a gate, not a calculator.
+// Governed actions now run through client.Supervise + client.ExecuteByName.
+// This is the headline Zero-Trust feature: Supervise wraps each action with
+// the Zero-Trust Gatekeeper, whose PRE-CHECK halts the action before the
+// inner operation ever runs when a halt rule fires. We deliberately do NOT
+// call client.Engine().Assess(...) directly in the demo scenarios, because
+// Assess bypasses the supervisor and therefore bypasses the gate — the
+// "policy enforcement at each step" guarantee comes only from ExecuteByName.
+//
+// Note on regressions (do NOT assert otherwise):
+//   - P0.1: the supervisor POST-check (Reflect) is FAIL-OPEN, so only the
+//     PRE-CHECK is a guaranteed block. All scenarios below rely solely on the
+//     pre-check.
+//   - P0.3: WithFailMode is a NO-OP for the policy gate; it is intentionally
+//     not used here and does not change block behavior.
+//
+// The Mangle analyzer rejects cross-fact :lt/:lte built-ins, so the numeric
+// comparisons themselves are performed in Go (see attachPrecomputedChecks).
+// The caller pre-computes the boolean outcome (business_hours, scale_too_high,
+// scale_too_low) and the policy just pattern-matches. This is the honest
+// boundary: the Datalog layer is a gate, not a calculator.
 
 package main
 
@@ -18,7 +33,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"sync/atomic"
 
+	"github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 )
@@ -36,40 +53,94 @@ const (
 )
 
 // injectNumericFact appends a numeric predicate fact to env.Facts so
-// downstream Datalog queries can read structured numeric values.
+// downstream Datalog queries can read structured numeric values. It is kept
+// for compatibility (e.g. pure Assess tests) but is NOT used by the governed
+// ExecuteByName path, which only forwards Metadata.
 func injectNumericFact(env *core.Envelope, predicate string, n int) {
 	env.Facts = append(env.Facts, fmt.Sprintf("%s(%d).", predicate, n))
 }
 
-// attachPrecomputedChecks performs the numeric comparisons in Go and
-// publishes the result as Datalog facts on the envelope. The policy
-// pattern-matches these facts rather than re-doing the comparison.
+// opCounter records whether a supervised no-op action actually executed, so
+// the demo and tests can prove the inner operation was (or was not) reached.
+type opCounter struct {
+	executed int32
+}
+
+// run returns a no-op function that records its own execution and prints a
+// trace line, mimicking the old MockAction so the demo shows whether the
+// inner action fired.
+func (c *opCounter) run(name string) func(context.Context, map[string]string) (string, error) {
+	return func(_ context.Context, _ map[string]string) (string, error) {
+		atomic.AddInt32(&c.executed, 1)
+		fmt.Printf("-> Executing action: %s\n", name)
+		return "ok", nil
+	}
+}
+
+// attachPrecomputedChecks performs the numeric comparisons in Go and publishes
+// the result as envelope Metadata (meta/2 facts) rather than raw Datalog
+// facts. The supervised ExecuteByName path only forwards Metadata to the
+// policy engine, so the boolean outcome must live there.
 //
-// This keeps the Datalog layer simple, honest about its capability
-// boundary, and free of analyzer mode errors. The Mangle policy is
-// the gate; Go is the calculator.
+// ROADMAP.md §12 boundary ("Go computes, policy gates"): the numeric
+// comparison is performed in Go and the boolean result is passed to the policy
+// as a meta fact; the Datalog layer is the gate, not the calculator.
 //
-// Empty rawReplicas/rawHour are treated as "not applicable for this
-// scenario" and produce no fact. This avoids spuriously emitting
-// scale_too_low(0) into a terraform-destroy envelope.
+// These Go-computed values are trusted LOCAL data (not LLM-derived), so there
+// is no escaping concern — they are boolean flags ("true"), not free text.
+//
+// Empty rawReplicas/rawHour are treated as "not applicable for this scenario"
+// and produce no meta flag. This avoids spuriously emitting scale_too_low into
+// a terraform-destroy envelope.
 func attachPrecomputedChecks(env *core.Envelope, rawReplicas, rawHour string) {
+	if env.Metadata == nil {
+		env.Metadata = make(map[string]any)
+	}
 	if rawReplicas != "" {
 		if n, err := strconv.Atoi(rawReplicas); err == nil {
 			if n > maxReplicas {
-				env.Facts = append(env.Facts, fmt.Sprintf("scale_too_high(%d).", n))
+				env.Metadata["scale_too_high"] = "true"
 			}
 			if n < minReplicas {
-				env.Facts = append(env.Facts, fmt.Sprintf("scale_too_low(%d).", n))
+				env.Metadata["scale_too_low"] = "true"
 			}
 		}
 	}
 	if rawHour != "" {
 		if h, err := strconv.Atoi(rawHour); err == nil {
 			if h >= businessHoursStart && h < businessHoursEnd {
-				env.Facts = append(env.Facts, fmt.Sprintf("business_hours(%d).", h))
+				env.Metadata["business_hours"] = "true"
 			}
 		}
 	}
+}
+
+// executeGoverned forwards the given metadata (plus any Go-computed flags
+// carried on extra.Metadata) to the supervised action via ExecuteByName.
+// ExecuteByName builds a FRESH envelope from the payload and only forwards
+// Metadata as meta/2 facts, so all policy inputs must be metadata.
+func executeGoverned(ctx context.Context, client *sdk.Client, op string, meta map[string]string, extra *core.Envelope) (core.Envelope, error) {
+	if extra != nil {
+		for k, v := range extra.Metadata {
+			if s, ok := v.(string); ok {
+				meta[k] = s
+			}
+		}
+	}
+	opts := make([]sdk.ExecuteOption, 0, len(meta))
+	for k, v := range meta {
+		opts = append(opts, sdk.WithMetadata(k, v))
+	}
+	return client.ExecuteByName(ctx, op, map[string]string{}, opts...)
+}
+
+// runGoverned executes a governed action and reports whether the inner
+// (supervised) action actually ran, plus any error from ExecuteByName.
+func runGoverned(ctx context.Context, client *sdk.Client, op string, counter *int32, meta map[string]string, extra *core.Envelope) (ran bool, err error) {
+	before := atomic.LoadInt32(counter)
+	_, err = executeGoverned(ctx, client, op, meta, extra)
+	after := atomic.LoadInt32(counter)
+	return after > before, err
 }
 
 func main() {
@@ -78,7 +149,7 @@ func main() {
 	fmt.Println("🚀 Secure CI/CD & DevOps Operator")
 	fmt.Println("==================================")
 	fmt.Println("Demonstrating infrastructure governance with Datalog security gates:")
-	fmt.Println("1. Terraform/K8s operations intercepted by policy engine")
+	fmt.Println("1. Terraform/K8s operations intercepted by the Zero-Trust Gatekeeper")
 	fmt.Println("2. Security rules enforce resource limits, time restrictions, and approvals")
 	fmt.Println("3. Violations are blocked before reaching infrastructure")
 	fmt.Println()
@@ -99,19 +170,37 @@ func main() {
 	fmt.Println("🛡️  Loaded security_gate.dl policy (governance + pre-computed checks).")
 	fmt.Println()
 
+	// Register one supervised no-op action per operation name. Supervise wraps
+	// each action with the Zero-Trust Gatekeeper. Only the PRE-CHECK is a
+	// guaranteed block (P0.1 regression: the Reflect POST-check is fail-open),
+	// so every scenario below relies on the pre-check halt.
+	var (
+		scale   opCounter
+		apply   opCounter
+		deploy  opCounter
+		destroy opCounter
+	)
+
+	client.RegisterAction("kubectl_scale", client.Supervise(function.New("kubectl_scale", scale.run("kubectl_scale"))))
+	client.RegisterAction("terraform_apply", client.Supervise(function.New("terraform_apply", apply.run("terraform_apply"))))
+	client.RegisterAction("kubectl_deploy", client.Supervise(function.New("kubectl_deploy", deploy.run("kubectl_deploy"))))
+	client.RegisterAction("terraform_destroy", client.Supervise(function.New("terraform_destroy", destroy.run("terraform_destroy"))))
+	fmt.Println("🔐 Registered supervised actions: kubectl_scale, terraform_apply, kubectl_deploy, terraform_destroy")
+	fmt.Println()
+
 	fmt.Println("🧪 Testing DevOps operations against security policies...")
 	fmt.Println()
 
 	// --- Scenario 1: Kubectl Scale to 20 (exceeds limit) ---
 	fmt.Println("--- Scenario 1: Kubectl Scale to 20 Replicas (Should Block) ---")
-	scaleEnv := core.NewEnvelope(map[string]string{
+	pre1 := &core.Envelope{}
+	attachPrecomputedChecks(pre1, "20", "")
+	meta1 := map[string]string{
 		"deployment": "api-server",
 		"namespace":  "production",
-	})
-	injectNumericFact(&scaleEnv, "target_replicas", 20)
-	attachPrecomputedChecks(&scaleEnv, "20", "")
-	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_scale"}, scaleEnv)
-	if core.IsAlignmentError(err) {
+	}
+	ran, err := runGoverned(ctx, client, "kubectl_scale", &scale.executed, meta1, pre1)
+	if core.IsPolicyViolationError(err) && !ran {
 		fmt.Printf("✅ Blocked: %v\n", err)
 	} else {
 		fmt.Println("❌ Unexpectedly allowed (should have blocked scale > 10)")
@@ -120,29 +209,29 @@ func main() {
 
 	// --- Scenario 2: Kubectl Scale to 5 (within limit) ---
 	fmt.Println("--- Scenario 2: Kubectl Scale to 5 Replicas (Should Allow) ---")
-	scaleOkEnv := core.NewEnvelope(map[string]string{
+	pre2 := &core.Envelope{}
+	attachPrecomputedChecks(pre2, "5", "")
+	meta2 := map[string]string{
 		"deployment": "api-server",
 		"namespace":  "production",
-	})
-	injectNumericFact(&scaleOkEnv, "target_replicas", 5)
-	attachPrecomputedChecks(&scaleOkEnv, "5", "")
-	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_scale"}, scaleOkEnv)
-	if core.IsAlignmentError(err) {
-		fmt.Printf("❌ Unexpectedly blocked: %v\n", err)
-	} else {
+	}
+	ran, err = runGoverned(ctx, client, "kubectl_scale", &scale.executed, meta2, pre2)
+	if err == nil && ran {
 		fmt.Println("✅ Allowed: Scale within limits.")
+	} else {
+		fmt.Printf("❌ Unexpectedly blocked: %v\n", err)
 	}
 	fmt.Println()
 
 	// --- Scenario 3: Terraform Apply with Open Security Group ---
 	fmt.Println("--- Scenario 3: Terraform Apply with Open Security Group (Should Block) ---")
-	tfApplyEnv := core.NewEnvelope(map[string]string{
-		"resource": "aws_security_group",
-		"name":     "prod-api-sg",
-	})
-	tfApplyEnv.Metadata["has_open_security_group"] = "true"
-	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_apply"}, tfApplyEnv)
-	if core.IsAlignmentError(err) {
+	meta3 := map[string]string{
+		"resource":                 "aws_security_group",
+		"name":                     "prod-api-sg",
+		"has_open_security_group":  "true",
+	}
+	ran, err = runGoverned(ctx, client, "terraform_apply", &apply.executed, meta3, nil)
+	if core.IsPolicyViolationError(err) && !ran {
 		fmt.Printf("✅ Blocked: %v\n", err)
 	} else {
 		fmt.Println("❌ Unexpectedly allowed (should have blocked open security group)")
@@ -151,28 +240,28 @@ func main() {
 
 	// --- Scenario 4: Terraform Apply with Proper Security Group ---
 	fmt.Println("--- Scenario 4: Terraform Apply with Restricted Security Group (Should Allow) ---")
-	tfApplyOkEnv := core.NewEnvelope(map[string]string{
-		"resource": "aws_security_group",
-		"name":     "prod-api-sg",
-	})
-	tfApplyOkEnv.Metadata["has_open_security_group"] = "false"
-	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_apply"}, tfApplyOkEnv)
-	if core.IsAlignmentError(err) {
-		fmt.Printf("❌ Unexpectedly blocked: %v\n", err)
-	} else {
+	meta4 := map[string]string{
+		"resource":                "aws_security_group",
+		"name":                    "prod-api-sg",
+		"has_open_security_group": "false",
+	}
+	ran, err = runGoverned(ctx, client, "terraform_apply", &apply.executed, meta4, nil)
+	if err == nil && ran {
 		fmt.Println("✅ Allowed: Security group is properly restricted.")
+	} else {
+		fmt.Printf("❌ Unexpectedly blocked: %v\n", err)
 	}
 	fmt.Println()
 
 	// --- Scenario 5: Production Deploy Without Approval ---
 	fmt.Println("--- Scenario 5: Production Deploy Without Approval (Should Block) ---")
-	deployEnv := core.NewEnvelope(map[string]string{
-		"image": "api-server:v1.2.3",
-	})
-	deployEnv.Metadata["target_env"] = "production"
-	deployEnv.Metadata["has_approval"] = "false"
-	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_deploy"}, deployEnv)
-	if core.IsAlignmentError(err) {
+	meta5 := map[string]string{
+		"image":       "api-server:v1.2.3",
+		"target_env":  "production",
+		"has_approval": "false",
+	}
+	ran, err = runGoverned(ctx, client, "kubectl_deploy", &deploy.executed, meta5, nil)
+	if core.IsPolicyViolationError(err) && !ran {
 		fmt.Printf("✅ Blocked: %v\n", err)
 	} else {
 		fmt.Println("❌ Unexpectedly allowed (should have blocked unapproved prod deploy)")
@@ -181,30 +270,30 @@ func main() {
 
 	// --- Scenario 6: Production Deploy With Approval ---
 	fmt.Println("--- Scenario 6: Production Deploy With Approval (Should Allow) ---")
-	deployApprovedEnv := core.NewEnvelope(map[string]string{
-		"image": "api-server:v1.2.3",
-	})
-	deployApprovedEnv.Metadata["target_env"] = "production"
-	deployApprovedEnv.Metadata["has_approval"] = "true"
-	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_deploy"}, deployApprovedEnv)
-	if core.IsAlignmentError(err) {
-		fmt.Printf("❌ Unexpectedly blocked: %v\n", err)
-	} else {
+	meta6 := map[string]string{
+		"image":        "api-server:v1.2.3",
+		"target_env":   "production",
+		"has_approval": "true",
+	}
+	ran, err = runGoverned(ctx, client, "kubectl_deploy", &deploy.executed, meta6, nil)
+	if err == nil && ran {
 		fmt.Println("✅ Allowed: Production deploy approved.")
+	} else {
+		fmt.Printf("❌ Unexpectedly blocked: %v\n", err)
 	}
 	fmt.Println()
 
 	// --- Scenario 7: Terraform Destroy at 14:00 (Business Hours) ---
 	fmt.Println("--- Scenario 7: Terraform Destroy at 14:00 UTC (Should Block) ---")
-	destroyEnv := core.NewEnvelope(map[string]string{
-		"resource": "aws_instance",
-		"name":     "prod-db-01",
-	})
-	injectNumericFact(&destroyEnv, "current_hour", 14)
-	attachPrecomputedChecks(&destroyEnv, "", "14")
-	destroyEnv.Metadata["has_approval"] = "true"
-	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_destroy"}, destroyEnv)
-	if core.IsAlignmentError(err) {
+	pre7 := &core.Envelope{}
+	attachPrecomputedChecks(pre7, "", "14")
+	meta7 := map[string]string{
+		"resource":     "aws_instance",
+		"name":         "prod-db-01",
+		"has_approval": "true",
+	}
+	ran, err = runGoverned(ctx, client, "terraform_destroy", &destroy.executed, meta7, pre7)
+	if core.IsPolicyViolationError(err) && !ran {
 		fmt.Printf("✅ Blocked: %v\n", err)
 	} else {
 		fmt.Println("❌ Unexpectedly allowed (should have blocked destroy during business hours)")
@@ -213,30 +302,30 @@ func main() {
 
 	// --- Scenario 8: Terraform Destroy at 22:00 (After Hours) ---
 	fmt.Println("--- Scenario 8: Terraform Destroy at 22:00 UTC (Should Allow) ---")
-	destroyNightEnv := core.NewEnvelope(map[string]string{
-		"resource": "aws_instance",
-		"name":     "staging-db-01",
-	})
-	injectNumericFact(&destroyNightEnv, "current_hour", 22)
-	attachPrecomputedChecks(&destroyNightEnv, "", "22")
-	destroyNightEnv.Metadata["has_approval"] = "true"
-	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_destroy"}, destroyNightEnv)
-	if core.IsAlignmentError(err) {
-		fmt.Printf("❌ Unexpectedly blocked: %v\n", err)
-	} else {
+	pre8 := &core.Envelope{}
+	attachPrecomputedChecks(pre8, "", "22")
+	meta8 := map[string]string{
+		"resource":     "aws_instance",
+		"name":         "staging-db-01",
+		"has_approval": "true",
+	}
+	ran, err = runGoverned(ctx, client, "terraform_destroy", &destroy.executed, meta8, pre8)
+	if err == nil && ran {
 		fmt.Println("✅ Allowed: Terraform destroy approved outside business hours.")
+	} else {
+		fmt.Printf("❌ Unexpectedly blocked: %v\n", err)
 	}
 	fmt.Println()
 
 	// --- Scenario 9: Public Database ---
 	fmt.Println("--- Scenario 9: Terraform Apply with Public Database (Should Block) ---")
-	publicDbEnv := core.NewEnvelope(map[string]string{
-		"resource": "aws_db_instance",
-		"name":     "prod-postgres",
-	})
-	publicDbEnv.Metadata["db_publicly_accessible"] = "true"
-	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_apply"}, publicDbEnv)
-	if core.IsAlignmentError(err) {
+	meta9 := map[string]string{
+		"resource":              "aws_db_instance",
+		"name":                  "prod-postgres",
+		"db_publicly_accessible": "true",
+	}
+	ran, err = runGoverned(ctx, client, "terraform_apply", &apply.executed, meta9, nil)
+	if core.IsPolicyViolationError(err) && !ran {
 		fmt.Printf("✅ Blocked: %v\n", err)
 	} else {
 		fmt.Println("❌ Unexpectedly allowed (should have blocked public database)")

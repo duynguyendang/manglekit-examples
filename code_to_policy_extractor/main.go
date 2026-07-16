@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 
+	function "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 )
@@ -86,10 +87,16 @@ type PRFile struct {
 }
 
 // PullRequest represents a PR with multiple files.
+//
+// The `mangle` tags let the supervisor's Zero-Config Reflection flatten the
+// payload into facts (e.g. pr_id("Req", "PR-1")) on the supervised path.
+// The architecture policy is gated on the `action_operation("Req",
+// "review_pr")` fact plus the per-file `file_path`/`file_imports` facts, which
+// are loaded as base facts below.
 type PullRequest struct {
-	PRID   string   `json:"pr_id"`
+	PRID   string   `json:"pr_id" mangle:"pr_id"`
 	Title  string   `json:"title"`
-	Author string   `json:"author"`
+	Author string   `json:"author" mangle:"author"`
 	Files  []PRFile `json:"files"`
 }
 
@@ -110,6 +117,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize client: %v", err)
 	}
+	defer client.Shutdown(ctx)
 
 	// 2. Load Architecture Rules (simulating LLM extraction from guidelines.md)
 	// In production, this would use the extractor to parse architecture_guidelines.md
@@ -121,7 +129,20 @@ func main() {
 	fmt.Println("✅ Loaded architecture rules (7 Clean Architecture rules + 2 naming conventions)")
 	fmt.Println()
 
-	// 3. Load Sample PR
+	// 3. Register the "review_pr" action as a supervised capability.
+	//
+	// Wrapping it in client.Supervise wires the Zero-Trust Gatekeeper: the
+	// pre-check evaluates the architecture policy with the
+	// action_operation("Req", "review_pr") fact injected, and the inner
+	// function only runs when the policy proceeds. Calling
+	// Engine().Assess directly would bypass this and also would NOT inject
+	// action_operation, so we drive the action through ExecuteByName.
+	reviewAction := function.New("review_pr", func(_ context.Context, pr PullRequest) (string, error) {
+		return fmt.Sprintf("reviewed PR %s (%d files)", pr.PRID, len(pr.Files)), nil
+	})
+	client.RegisterAction("review_pr", client.Supervise(reviewAction))
+
+	// 4. Load Sample PR
 	prBytes, err := os.ReadFile(filepath.Join(exampleDir(), "sample_pr.json"))
 	if err != nil {
 		log.Fatalf("Failed to read sample_pr.json: %v", err)
@@ -135,36 +156,26 @@ func main() {
 	fmt.Printf("📥 Reviewing PR: %s - %s (by %s)\n", pr.PRID, pr.Title, pr.Author)
 	fmt.Printf("   Files changed: %d\n\n", len(pr.Files))
 
-	// 4. Convert PR files to Datalog facts
-	var facts []string
-	for _, file := range pr.Files {
-		// Add file_path fact
-		facts = append(facts, fmt.Sprintf(`file_path("%s", "%s")`, file.Path, getLayer(file.Path)))
-
-		// Add file_imports facts
-		for _, imp := range file.Imports {
-			facts = append(facts, fmt.Sprintf(`file_imports("%s", "%s")`, file.Path, getLayer(imp)))
-		}
-
-		// Add file_name_matches fact
-		if hasValidName(file.Path) {
-			facts = append(facts, fmt.Sprintf(`file_name_matches("%s", "%s")`, file.Path, getSuffix(file.Path)))
-		}
-	}
-
-	if err := client.LoadFacts(ctx, facts); err != nil {
+	// 5. Review PR against architecture rules (governed path).
+	//
+	// The per-file facts are loaded as engine base facts; the supervised
+	// pre-check sees them together with action_operation("Req",
+	// "review_pr"). Mangle's LoadFacts is additive, so this clean PR must be
+	// evaluated BEFORE any violating facts are loaded (see below).
+	fmt.Println("🔍 Running architecture lint check...")
+	if err := loadPRFacts(ctx, client, pr); err != nil {
 		log.Fatalf("Failed to load PR facts: %v", err)
 	}
 	fmt.Println("📊 Loaded PR facts into policy engine")
 	fmt.Println()
 
-	// 5. Review PR against architecture rules
-	fmt.Println("🔍 Running architecture lint check...")
 	reviewEnv := core.NewEnvelope(pr)
-	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "review_pr"}, reviewEnv)
-	if core.IsAlignmentError(err) {
+	err = runReview(ctx, client, "review_pr", pr, reviewEnv)
+	if core.IsPolicyViolationError(err) {
 		fmt.Println("❌ PR REJECTED - Architecture violations found:")
 		fmt.Printf("   %v\n", err)
+	} else if err != nil {
+		log.Fatalf("Review failed unexpectedly: %v", err)
 	} else {
 		fmt.Println("✅ PR APPROVED - No architecture violations found")
 	}
@@ -196,28 +207,18 @@ func main() {
 	fmt.Printf("📥 Reviewing VIOLATING PR: %s - %s\n", violatingPR.PRID, violatingPR.Title)
 	fmt.Printf("   Files changed: %d\n\n", len(violatingPR.Files))
 
-	// Clear old facts and load new ones
-	var violatingFacts []string
-	for _, file := range violatingPR.Files {
-		violatingFacts = append(violatingFacts, fmt.Sprintf(`file_path("%s", "%s")`, file.Path, getLayer(file.Path)))
-		for _, imp := range file.Imports {
-			violatingFacts = append(violatingFacts, fmt.Sprintf(`file_imports("%s", "%s")`, file.Path, getLayer(imp)))
-		}
-		if hasValidName(file.Path) {
-			violatingFacts = append(violatingFacts, fmt.Sprintf(`file_name_matches("%s", "%s")`, file.Path, getSuffix(file.Path)))
-		}
-	}
-
-	if err := client.LoadFacts(ctx, violatingFacts); err != nil {
+	fmt.Println("🔍 Running architecture lint check...")
+	if err := loadPRFacts(ctx, client, violatingPR); err != nil {
 		log.Fatalf("Failed to load violating PR facts: %v", err)
 	}
 
-	fmt.Println("🔍 Running architecture lint check...")
 	violatingEnv := core.NewEnvelope(violatingPR)
-	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "review_pr"}, violatingEnv)
-	if core.IsAlignmentError(err) {
+	err = runReview(ctx, client, "review_pr", violatingPR, violatingEnv)
+	if core.IsPolicyViolationError(err) {
 		fmt.Println("❌ PR REJECTED - Architecture violations found:")
 		fmt.Printf("   %v\n", err)
+	} else if err != nil {
+		log.Fatalf("Review failed unexpectedly: %v", err)
 	} else {
 		fmt.Println("✅ PR APPROVED - No architecture violations found")
 	}
@@ -228,6 +229,31 @@ func main() {
 	fmt.Println("💡 Key Takeaway: Architecture guidelines are automatically enforced.")
 	fmt.Println("   Violations are caught before code is merged, with specific error")
 	fmt.Println("   messages indicating which rule was violated and in which file.")
+}
+
+// runReview drives the review_pr action through the supervised path. The
+// inner function only executes when the pre-check proceeds; on a Tier-0/1
+// violation the supervisor returns a core.PolicyViolationError and the
+// action is blocked.
+func runReview(ctx context.Context, client *sdk.Client, name string, payload any, _ core.Envelope) error {
+	_, err := client.ExecuteByName(ctx, name, payload)
+	return err
+}
+
+// loadPRFacts converts a PR's files into Datalog facts and loads them as
+// engine base facts. These are the facts the architecture policy is gated on.
+func loadPRFacts(ctx context.Context, client *sdk.Client, pr PullRequest) error {
+	var facts []string
+	for _, file := range pr.Files {
+		facts = append(facts, fmt.Sprintf(`file_path("%s", "%s")`, file.Path, getLayer(file.Path)))
+		for _, imp := range file.Imports {
+			facts = append(facts, fmt.Sprintf(`file_imports("%s", "%s")`, file.Path, getLayer(imp)))
+		}
+		if hasValidName(file.Path) {
+			facts = append(facts, fmt.Sprintf(`file_name_matches("%s", "%s")`, file.Path, getSuffix(file.Path)))
+		}
+	}
+	return client.LoadFacts(ctx, facts)
 }
 
 // getLayer extracts the layer prefix from a file path.

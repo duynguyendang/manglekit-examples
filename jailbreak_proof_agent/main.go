@@ -8,6 +8,14 @@
 //  4. Contrast: clean doc → no taint label → send_email permitted.
 //
 // Models on hybrid_rag. No API key required (deterministic mock TextGenerator).
+//
+// NOTE: this example exercises ONLY the supervisor PRE-CHECK (fail-closed) via
+// Engine().AssessPlan. That is the trustworthy gate
+// (internal/supervisor/action.go:73/82). It is a pure policy-decision demo,
+// so it deliberately calls AssessPlan directly rather than
+// Supervise+ExecuteByName; AssessPlan does not inject action_operation on
+// its own (manglekit.NewRequestEnv adds it). The POST-CHECK (Reflect) is
+// fail-open (CODE_REVIEW P0.1) and is intentionally not relied upon here.
 
 package main
 
@@ -47,7 +55,7 @@ func main() {
 					return fmt.Errorf("expected HALT, got %s (err=%v)", decision.Outcome, err)
 				}
 				return core.NewPolicyViolationError(
-					"T0", "taint_axiom", "tainted egress blocked", "",
+					string(core.TierT0_Axiom), "taint_axiom", "tainted egress blocked", "",
 				)
 			},
 			WantBlocked: true,

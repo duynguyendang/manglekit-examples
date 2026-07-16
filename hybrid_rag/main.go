@@ -261,11 +261,14 @@ func main() {
 	}
 
 	// 2. Configure Client
-	// FailModeClosed (default): block execution on policy/guard failures.
-	// FailModeOpen: allow execution to proceed with a warning.
+	// NOTE (CODE_REVIEW P0.3): sdk.WithFailMode is a NO-OP for the
+	// policy gate — it does NOT change block behavior. The default
+	// failure mode is already "closed". Whether a request is blocked is
+	// decided by the policy + the supervisor PRE-CHECK, not by
+	// WithFailMode. We therefore rely on the default and do not pass a
+	// fail-mode option here.
 	client, err := sdk.NewClient(ctx,
 		sdk.WithMemory(customMem),
-		sdk.WithFailMode(sdk.FailModeOpen),
 	)
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
@@ -277,6 +280,12 @@ func main() {
 	// output and trigger a RETRY steering response. Without this
 	// registration the rule never derives and the PII scenario
 	// silently passes (incorrectly).
+	//
+	// NOTE (CODE_REVIEW P0.5): the pii_scan facts loaded here and the
+	// simulant output text are trusted LOCAL data / controlled demo
+	// inputs, NOT arbitrary LLM-derived untrusted content. The
+	// escaping / injection concern (P0.5) therefore does not apply to
+	// this controlled scenario.
 	//
 	// Must use LoadFromSource (not LoadPolicy/AddPolicy) when loading
 	// policies that reference external predicates, because LoadFromSource
@@ -396,6 +405,23 @@ func runScenario(ctx context.Context, client *sdk.Client, name, user, query stri
 
 func runPIIScenario(ctx context.Context, client *sdk.Client, name, user string, leakPII, expectRetry bool) {
 	fmt.Printf("\n--- Running %s ---\n", name)
+
+	// NOTE (CODE_REVIEW P0.5): the llmOutput text and the loaded
+	// pii_scan fact below are trusted LOCAL / controlled demo data, not
+	// untrusted LLM-derived input, so the escaping concern (P0.5) does
+	// not apply to this controlled scenario.
+	//
+	// NOTE (CODE_REVIEW P0.1): this scenario demonstrates the PII halt
+	// via the supervisor POST-CHECK (Reflect), which evaluates
+	// halt("Output", ...) AFTER the inner action runs. This works when
+	// the verifier (pii_scan) succeeds, but the POST-check is FAIL-OPEN
+	// on verifier error (see docs/CODE_REVIEW.md P0.1 and
+	// docs/okf/architecture/overview.md:43 — internal/supervisor/action.go
+	// only blocks when `err == nil && !res.Pass`). The TRUSTWORTHY gate
+	// is the supervisor PRE-CHECK (which blocks before the action runs)
+	// — see TestPreCheckFailClosed. We keep the existing post-check
+	// behavior below: the assertions still expect the post-check to halt
+	// on PII in practice when the verifier succeeds.
 
 	// Exercise the PII post-check end-to-end through the real
 	// supervised path (Reflect):

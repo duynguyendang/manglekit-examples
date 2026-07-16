@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	function "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 )
@@ -80,6 +81,16 @@ func buildFacts(pr PullRequest) []string {
 	return facts
 }
 
+// registerReviewAction wires the review_pr capability through the Zero-Trust
+// Supervisor and registers it, mirroring main(). The inner function only runs
+// when the pre-check proceeds.
+func registerReviewAction(client *sdk.Client) {
+	reviewAction := function.New("review_pr", func(_ context.Context, pr PullRequest) (string, error) {
+		return fmt.Sprintf("reviewed PR %s", pr.PRID), nil
+	})
+	client.RegisterAction("review_pr", client.Supervise(reviewAction))
+}
+
 func TestPolicyEngine_PassingPR(t *testing.T) {
 	ctx := context.Background()
 
@@ -92,6 +103,7 @@ func TestPolicyEngine_PassingPR(t *testing.T) {
 	if err := client.Engine().LoadPolicy(ctx, archPolicy); err != nil {
 		t.Fatalf("Failed to load policy: %v", err)
 	}
+	registerReviewAction(client)
 
 	passingPR := PullRequest{
 		PRID:   "PR-1001",
@@ -118,9 +130,11 @@ func TestPolicyEngine_PassingPR(t *testing.T) {
 		t.Fatalf("Failed to load facts: %v", err)
 	}
 
-	env := core.NewEnvelope(passingPR)
-	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "review_pr"}, env)
-	if core.IsAlignmentError(err) {
+	// Governed path: the supervisor pre-check evaluates the policy with
+	// action_operation("Req", "review_pr") and only lets the inner function
+	// run when it proceeds.
+	_, err = client.ExecuteByName(ctx, "review_pr", passingPR)
+	if core.IsPolicyViolationError(err) {
 		t.Errorf("Expected passing PR to be approved, but got violation: %v", err)
 	}
 }
@@ -137,6 +151,7 @@ func TestPolicyEngine_ViolatingPR(t *testing.T) {
 	if err := client.Engine().LoadPolicy(ctx, archPolicy); err != nil {
 		t.Fatalf("Failed to load policy: %v", err)
 	}
+	registerReviewAction(client)
 
 	violatingPR := PullRequest{
 		PRID:   "PR-9999",
@@ -159,9 +174,10 @@ func TestPolicyEngine_ViolatingPR(t *testing.T) {
 		t.Fatalf("Failed to load facts: %v", err)
 	}
 
-	env := core.NewEnvelope(violatingPR)
-	err = client.Engine().Assess(ctx, core.ActionMetadata{Name: "review_pr"}, env)
-	if !core.IsAlignmentError(err) {
-		t.Errorf("Expected violating PR to be blocked, but got: %v", err)
+	// The supervisor pre-check must block this PR. The inner function must
+	// NOT run and the call must return core.PolicyViolationError.
+	_, err = client.ExecuteByName(ctx, "review_pr", violatingPR)
+	if !core.IsPolicyViolationError(err) {
+		t.Errorf("Expected violating PR to be blocked (PolicyViolationError), but got: %v", err)
 	}
 }

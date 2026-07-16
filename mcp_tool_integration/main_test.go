@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"testing"
 
 	"github.com/duynguyendang/manglekit/adapters/mcp"
@@ -94,6 +95,9 @@ func TestMCPLoaderConfig_FailOnStartup(t *testing.T) {
 	}
 }
 
+// TestPolicyGating_AllowRead exercises the policy directly via
+// Engine().Assess. This is a pure-policy check that BYPASSES the supervisor
+// (Zero-Trust Gatekeeper), so it never exercises the real supervised contract.
 func TestPolicyGating_AllowRead(t *testing.T) {
 	client := testClient(t)
 	ctx := context.Background()
@@ -105,6 +109,8 @@ func TestPolicyGating_AllowRead(t *testing.T) {
 	}
 }
 
+// TestPolicyGating_BlockWriteToEtc exercises the policy directly via
+// Engine().Assess. This is a pure-policy check that BYPASSES the supervisor.
 func TestPolicyGating_BlockWriteToEtc(t *testing.T) {
 	client := testClient(t)
 	ctx := context.Background()
@@ -116,6 +122,8 @@ func TestPolicyGating_BlockWriteToEtc(t *testing.T) {
 	}
 }
 
+// TestPolicyGating_BlockWriteToSys exercises the policy directly via
+// Engine().Assess. This is a pure-policy check that BYPASSES the supervisor.
 func TestPolicyGating_BlockWriteToSys(t *testing.T) {
 	client := testClient(t)
 	ctx := context.Background()
@@ -127,6 +135,8 @@ func TestPolicyGating_BlockWriteToSys(t *testing.T) {
 	}
 }
 
+// TestPolicyGating_AllowWriteToTmp exercises the policy directly via
+// Engine().Assess. This is a pure-policy check that BYPASSES the supervisor.
 func TestPolicyGating_AllowWriteToTmp(t *testing.T) {
 	client := testClient(t)
 	ctx := context.Background()
@@ -138,6 +148,8 @@ func TestPolicyGating_AllowWriteToTmp(t *testing.T) {
 	}
 }
 
+// TestPolicyGating_BlockDelete exercises the policy directly via
+// Engine().Assess. This is a pure-policy check that BYPASSES the supervisor.
 func TestPolicyGating_BlockDelete(t *testing.T) {
 	client := testClient(t)
 	ctx := context.Background()
@@ -194,4 +206,66 @@ func TestPolicyGating_WithRegisteredAction(t *testing.T) {
 		t.Fatal("Expected non-nil result from registered MCP action")
 	}
 	fmt.Printf("Registered action result: %v\n", res.Payload)
+}
+
+// TestSupervisedGating_BlockWriteToEtc pins the REAL supervised contract:
+// the action is wrapped by Supervise (Zero-Trust Gatekeeper) and driven via
+// ExecuteByName, so the gate actually executes. A write to a sensitive path
+// must be blocked by the pre-check and the inner action must NOT run.
+func TestSupervisedGating_BlockWriteToEtc(t *testing.T) {
+	client := testClient(t)
+	ctx := context.Background()
+
+	action := &simulatedMCPAction{
+		serverName: "filesystem",
+		name:       "write_file",
+	}
+	safeAction := client.Supervise(action)
+	client.RegisterAction(safeAction.Metadata().Name, safeAction)
+
+	res, err := client.ExecuteByName(ctx, "mcp_filesystem_write_file",
+		map[string]string{"path": "/etc/passwd"},
+		sdk.WithMetadata("mcp_operation", "write"),
+		sdk.WithMetadata("mcp_path", "/etc/passwd"),
+		sdk.WithMetadata("mcp_path_sensitive", "true"),
+		sdk.WithMetadata("mcp_path_restricted", "true"),
+	)
+	executed := atomic.LoadInt32(&action.execCount) > 0
+
+	if !core.IsPolicyViolationError(err) {
+		t.Fatalf("Expected policy violation on write to /etc, got err=%v", err)
+	}
+	if executed {
+		t.Fatal("Inner action executed despite a pre-check halt (gate is ineffective)")
+	}
+	_ = res
+}
+
+// TestSupervisedGating_AllowRead pins the REAL supervised contract: a read from
+// /tmp is permitted by the gate and the supervised inner action must run.
+func TestSupervisedGating_AllowRead(t *testing.T) {
+	client := testClient(t)
+	ctx := context.Background()
+
+	action := &simulatedMCPAction{
+		serverName: "filesystem",
+		name:       "read_file",
+	}
+	safeAction := client.Supervise(action)
+	client.RegisterAction(safeAction.Metadata().Name, safeAction)
+
+	res, err := client.ExecuteByName(ctx, "mcp_filesystem_read_file",
+		map[string]string{"path": "/tmp/data.txt"},
+		sdk.WithMetadata("mcp_operation", "read"),
+		sdk.WithMetadata("mcp_path", "/tmp/data.txt"),
+	)
+	if err != nil {
+		t.Fatalf("Expected read from /tmp to be allowed, got err=%v", err)
+	}
+	if atomic.LoadInt32(&action.execCount) == 0 {
+		t.Fatal("Expected inner action to execute on an allowed supervised call")
+	}
+	if res.Payload == nil {
+		t.Fatal("Expected non-nil result from registered MCP action")
+	}
 }

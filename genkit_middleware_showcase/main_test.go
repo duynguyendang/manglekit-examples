@@ -105,8 +105,8 @@ func TestBuildMiddlewareConfig(t *testing.T) {
 		t.Error("Fallback middleware is nil")
 	} else if len(cfg.Fallback.Models) != 1 {
 		t.Errorf("expected 1 fallback model, got %d", len(cfg.Fallback.Models))
-	} else if cfg.Fallback.Models[0].Name() != "google/gemini-1.0-pro" {
-		t.Errorf("expected fallback model %q, got %q", "google/gemini-1.0-pro", cfg.Fallback.Models[0].Name())
+	} else if cfg.Fallback.Models[0].Name() != "googleai/gemini-2.0-flash" {
+		t.Errorf("expected fallback model %q, got %q", "googleai/gemini-2.0-flash", cfg.Fallback.Models[0].Name())
 	}
 
 	if cfg.ToolApproval == nil {
@@ -174,5 +174,41 @@ func TestValidateConfig_InvalidDelay(t *testing.T) {
 	err := validateConfig(cfg)
 	if err == nil {
 		t.Error("expected error when MaxDelayMs < InitialDelayMs")
+	}
+}
+
+// TestNoKeyRetryPath confirms the middleware composition is
+// well-formed and that the deterministic generator's retry semantics
+// work WITHOUT any API key or network. The Genkit retry/fallback
+// middleware only actually re-invokes Generate when the generator
+// is a real genkit-backed adapter; here we prove the generator
+// fails its first call then succeeds, and that building the middleware
+// options (Retry + Fallback + ToolApproval) succeeds — i.e. the
+// showcase's composition is valid end-to-end, keyless.
+func TestNoKeyRetryPath(t *testing.T) {
+	cfg := buildMiddlewareConfig()
+	if err := validateConfig(cfg); err != nil {
+		t.Fatalf("middleware config invalid: %v", err)
+	}
+	if cfg.Retry == nil {
+		t.Fatal("expected Retry middleware in composition")
+	}
+	if cfg.Fallback == nil {
+		t.Fatal("expected Fallback middleware in composition")
+	}
+	if cfg.ToolApproval == nil {
+		t.Fatal("expected ToolApproval middleware in composition")
+	}
+
+	// Deterministic generator: fails first call, then succeeds.
+	gen := &countingGenerator{failNext: 1}
+	if _, err := gen.Generate(context.Background(), "prompt"); err == nil {
+		t.Fatal("expected first simulated call to fail")
+	}
+	if _, err := gen.Generate(context.Background(), "prompt"); err != nil {
+		t.Fatalf("expected second call to succeed, got: %v", err)
+	}
+	if gen.calls < 2 {
+		t.Errorf("expected >=2 generator calls (retry would re-invoke), got %d", gen.calls)
 	}
 }

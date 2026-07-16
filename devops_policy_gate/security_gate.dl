@@ -32,33 +32,32 @@ halt("Req", "Terraform destroy requires approval") :-
 
 % --- Business-Hours Window ---
 %
-% Mangle's :lt/:lte built-ins require both arguments to be
-% input-mode bound through a single fact predicate; the analyzer
-% cannot prove that across separate fact predicates. So the caller
-% collapses the comparison into a single business_hours(N) fact and
-% the policy just pattern-matches it. Numeric range comparison is
-% not actually performed by the policy — the SDK does it in Go and
-% publishes the boolean result. This is honest about the SDK's
-% capability boundary.
-
-Decl business_hours(N).
+% Mangle's :lt/:lte built-ins require both arguments to be input-mode bound
+% through a single fact predicate; the analyzer cannot prove that across
+% separate fact predicates. So the caller (Go) collapses the comparison into
+% a boolean meta flag `business_hours` ("true"/absent) and the policy just
+% pattern-matches it. Numeric range comparison is NOT actually performed by
+% the policy — the SDK does it in Go (attachPrecomputedChecks) and publishes
+% the boolean result as meta/2. This is honest about the SDK's capability
+% boundary: the Datalog layer is the gate, not the calculator.
+%
+% The flag is forwarded to the policy engine via ExecuteByName metadata, so
+% it arrives as meta("business_hours", "true") — not as a raw fact.
 
 halt("Req", "Cannot destroy infrastructure during business hours") :-
     action_operation("Req", "terraform_destroy"),
-    business_hours(_).
+    meta("business_hours", "true").
 
 % --- Replica Limit ---
-% Same pattern: the SDK computes "N > 10 || N < 1" in Go and emits
-% either scale_too_high(N) or scale_too_low(N) as a fact. The policy
-% pattern-matches the pre-computed result.
-
-Decl scale_too_high(N).
-Decl scale_too_low(N).
+% Same pattern: the SDK computes "N > 10 || N < 1" in Go and emits either
+% scale_too_high or scale_too_low as a boolean meta flag ("true"/absent).
+% The policy pattern-matches the pre-computed result, which arrives as
+% meta("scale_too_high", "true") / meta("scale_too_low", "true").
 
 halt("Req", "Scale exceeds maximum replicas") :-
     action_operation("Req", "kubectl_scale"),
-    scale_too_high(_).
+    meta("scale_too_high", "true").
 
 halt("Req", "Cannot scale to zero replicas") :-
     action_operation("Req", "kubectl_scale"),
-    scale_too_low(_).
+    meta("scale_too_low", "true").

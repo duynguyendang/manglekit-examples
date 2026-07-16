@@ -42,13 +42,13 @@ func TestJailbreakProofAgent(t *testing.T) {
 				}
 				if decision.Outcome != core.DecisionHalt {
 					return core.NewPolicyViolationError(
-						"T0", "taint_axiom",
+						string(core.TierT0_Axiom), "taint_axiom",
 						"tainted egress should be blocked", "",
 					)
 				}
 				// Return a blocking error so the WantBlocked scenario passes.
 				return core.NewPolicyViolationError(
-					"T0", "taint_axiom",
+					string(core.TierT0_Axiom), "taint_axiom",
 					"tainted egress blocked by T0", "",
 				)
 			},
@@ -68,7 +68,7 @@ func TestJailbreakProofAgent(t *testing.T) {
 				}
 				if decision.Outcome != core.DecisionProceed {
 					return core.NewPolicyViolationError(
-						"T0", "taint_axiom",
+						string(core.TierT0_Axiom), "taint_axiom",
 						"clean egress should be permitted", "",
 					)
 				}

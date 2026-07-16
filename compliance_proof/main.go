@@ -7,6 +7,16 @@
 //   T0 (Axiom)   — Art.9 special-category data
 //   T1 (Govern)  — Art.6 lawful basis
 //
+// NOTE: this is a PURE policy-decision demo. It calls
+// Engine().AssessPlan directly (NOT Supervise+ExecuteByName), so it
+// BYPASSES the supervisor and the action_operation/2 + meta/2 + label/1
+// injection. AssessPlan does not inject action_operation from an action
+// name, so each case APPENDS action_operation("Req", Name). to env.Facts
+// (see below) because gdpr_policy.dl gates halt rules on it — the
+// comment there explains why. The POST-CHECK (Reflect) is fail-open
+// (CODE_REVIEW P0.1); the proofs below rely only on the PRE-CHECK.
+// AuditTrail bindings for halt/2 rules are empty (ROADMAP.md §13).
+//
 // No API key required (deterministic mock TextGenerator).
 
 package main

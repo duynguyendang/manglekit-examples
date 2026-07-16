@@ -7,6 +7,14 @@
 // steeringEnabled) uses Engine().Query("violation(Reason)") to reject
 // and feed back until the symbolic layer certifies zero violations.
 //
+// NOTE: this is a PURE policy-decision demo. It calls
+// Engine().AssessPlan / Engine().Query directly (not Supervise+ExecuteByName),
+// so it bypasses the supervisor and the action_operation/2 + meta/2 + label/1
+// injection. The verify-retry loop is CUSTOM Go code here, not the
+// SDK's built-in steering — the loop is explicit so the example can run
+// without WithSteeringEnabled (client.Execute is steering-gated and errors
+// otherwise). See TestVerifyRetryConverges which pins convergence.
+//
 // Models on math_solver. No API key required (deterministic mock).
 
 package main

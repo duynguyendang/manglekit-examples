@@ -2,6 +2,15 @@
 
 Example applications demonstrating [Manglekit](https://github.com/duynguyendang/manglekit) — a Sovereign Neuro-Symbolic Logic Kernel for Go with policy-based guardrails, cognitive loops, and neuro-symbolic reasoning.
 
+## Makefile
+
+```bash
+make build       # build all examples
+make test        # run all example tests
+make run/<name>  # run a specific example (e.g. make run/devops_policy_gate)
+make clean       # clean test artifacts and binaries
+```
+
 ## Prerequisites
 
 - Go 1.24+
@@ -81,12 +90,38 @@ Examples are ordered by complexity. Start with the basics and work your way up.
 | Hybrid memory (RAG) | `sdk.HybridMemory` | hybrid_rag |
 | Genkit middleware | `adapters/ai` | genkit_middleware_showcase |
 | Session state recovery | `core.StateProvider` | session_recovery |
-| Supervisor (zero-trust) | `client.Supervise()` | hybrid_rag, mcp_tool_integration |
+| Supervisor (zero-trust) | `client.Supervise()` → `client.ExecuteByName()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning, session_recovery |
 | Function adapter | `adapters/func` | hybrid_rag |
 | Taint labels (security) | `core.Envelope.SecurityLabels` | jailbreak_proof_agent, hybrid_rag |
 | Tiered governance (T0-T3) | `core.Tier` | compliance_proof, devops_policy_gate |
 | AuditTrail rendering | `core.AuditTrail`, `NewAuditRecordFromTrail` | compliance_proof |
 | Symbolic verification | `engine.Query()` | verified_reasoning |
+
+## Examples pin current (regressed) library behavior
+
+These examples are written against the **real** `manglekit` architecture and
+deliberately pin its *current* behavior — including the three regressions
+documented in `docs/CODE_REVIEW.md` (re-audit 2026-07-15):
+
+- **P0.1 — supervisor post-check (Reflect) is fail-open** (`internal/supervisor/action.go:140`,
+  `err == nil && !res.Pass`). Examples treat the **pre-check** as the trustworthy gate.
+- **P0.3 — `WithFailMode` is a no-op for the policy gate.** It is only consulted in the
+  text-extraction fallback (`internal/supervisor/sdk_adapter.go:271`); the verify/Reflect
+  gates ignore it. Examples do **not** claim `WithFailMode` changes block behavior.
+- **P0.5 — Datalog escaping.** The live path's `atomToDatalog` (`sdk_adapter.go:22`) *does*
+  escape subject/object and validate the predicate via `engine.EscapeString` and an
+  identifier regex; facts built from dynamic/trusted-local values are safe. The examples
+  do not rely on escaping for LLM-derived input and comment accordingly.
+
+Governance is demonstrated through `client.Supervise(action)` + `client.ExecuteByName(...)`.
+Direct `client.Engine().Assess`/`AssessPlan` calls bypass the supervisor and (for
+non-supervised paths) do not inject `action_operation`/`meta`/`label` facts, so they carry
+an explicit comment and manually append `action_operation("Req", Name).` where a halt rule
+requires it. `client.Execute` is steering-gated (errors unless `WithSteeringEnabled`), so
+examples prefer `ExecuteByName`/`generator.Generate`.
+
+`ooda.NewLoop` (used by `ooda_document_generator`) is **experimental** (ROADMAP §P3); the
+canonical entry points are `ooda.NewBuilder()...Build()` + `ooda.RunOODA`/`RunOODAEAST`.
 
 ## Testing
 
