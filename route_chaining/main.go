@@ -74,9 +74,9 @@ func main() {
 	fmt.Println("=== Demo 1: Basic ROUTE via EvaluateSteering ===")
 	fmt.Println()
 	fmt.Println("Policy routes:")
-	fmt.Println("  meta(data_type=text)  → text_handler")
-	fmt.Println("  meta(data_type=image) → image_handler")
-	fmt.Println("  default               → fallback_handler")
+	fmt.Println("  meta(data_type=text)  → text_handler (T1)")
+	fmt.Println("  meta(data_type=image) → image_handler (T1)")
+	fmt.Println("  default               → fallback_handler (T3)")
 	fmt.Println()
 
 	routeCases := []struct {

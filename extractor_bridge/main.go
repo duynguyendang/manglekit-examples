@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/duynguyendang/manglekit/adapters/extractor"
 	"github.com/duynguyendang/manglekit/core"
@@ -31,11 +32,19 @@ type Order struct {
 	Price    float64 `mangle:"price" json:"price"`
 }
 
-// mockLLMAction returns canned JSON matching the Order schema.
+// mockExtractLLM returns canned JSON matching the Order schema.
+// Different inputs produce different order details.
 type mockExtractLLM struct{}
 
 func (a *mockExtractLLM) Execute(_ context.Context, env core.Envelope) (core.Envelope, error) {
+	input, _ := env.Payload.(string)
 	order := Order{Product: "widget", Quantity: 5, Price: 29.99}
+	switch {
+	case strings.Contains(strings.ToLower(input), "gadget"):
+		order = Order{Product: "gadget", Quantity: 10, Price: 15.50}
+	case strings.Contains(strings.ToLower(input), "purchase"):
+		order = Order{Product: "widget", Quantity: 3, Price: 29.99}
+	}
 	data, _ := json.Marshal(order)
 	return core.NewEnvelope(string(data)), nil
 }
