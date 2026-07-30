@@ -1,0 +1,11 @@
+% Routing policy — routes requests to specialized handlers by data type.
+% Uses value(Req, Payload) from toMangleFacts to bind Req.
+% Declares value/2 explicitly since it's not in std.dl.
+% Note: meta/2 is auto-declared in std.dl by the engine.
+
+Decl value(A, B).
+
+% Route by metadata (injected as meta/2 facts by EvaluateSteering)
+route(Req, "text_handler", "TIER_0") :- value(Req, _), meta("data_type", "text").
+route(Req, "image_handler", "TIER_0") :- value(Req, _), meta("data_type", "image").
+route(Req, "fallback_handler", "TIER_0") :- value(Req, _).

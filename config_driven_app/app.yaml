@@ -1,0 +1,18 @@
+# app.yaml — Declarative configuration for config_driven_app demo.
+# Demonstrates config.Load() + sdk.WithConfig() + generics API + provider registry.
+
+policy:
+  path: ""  # loaded separately for demo
+
+failure_mode: "closed"
+
+observability:
+  enabled: true
+  log_level: "info"
+
+actions:
+  classify_text:
+    type: "llm"
+    provider: "mock"
+    options:
+      model: "mock-model"

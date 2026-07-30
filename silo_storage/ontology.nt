@@ -1,0 +1,5 @@
+<alice> <reports_to> <bob> .
+<bob> <reports_to> <charlie> .
+<charlie> <reports_to> <diana> .
+<alice> <member_of> <team_platform> .
+<spec_alpha> <has_owner> <team_platform> .

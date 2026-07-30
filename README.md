@@ -110,9 +110,10 @@ External system integrations, LLM bridges, and production infrastructure.
 | Feature | Package | Examples |
 |---|---|---|
 | Datalog policy engine | `core.Evaluator` | All examples |
-| Zero-trust supervisor | `client.Supervise()` → `client.ExecuteByName()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning, session_recovery, gherkin_policy, route_chaining, config_driven_app |
-| AssessPlan (pure policy-decision) | `Engine().AssessPlan()` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_document_generator, jailbreak_proof_agent, gherkin_policy |
-| AuditTrail rendering | `core.AuditTrail` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_document_generator, policy_copilot |
+| Zero-trust supervisor | `client.Supervise()` → `client.ExecuteByName()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning, session_recovery, config_driven_app |
+| Assess (policy evaluation) | `Engine().Assess()` | gherkin_policy, route_chaining, config_driven_app, knowledge_graph_reasoning |
+| AssessPlan (pure policy-decision) | `Engine().AssessPlan()` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_document_generator, jailbreak_proof_agent |
+| AuditTrail rendering | `core.AuditTrail` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_document_generator |
 | Tiered governance (T0–T3) | `core.Tier` | compliance_proof, devops_policy_gate, ooda_document_generator |
 | Goal-based planning | `client.Plan()` / `client.ExecutePlan()` | goal_based_planning |
 | Function adapter | `adapters/func` | hybrid_rag, devops_policy_gate, code_to_policy_extractor |
@@ -122,7 +123,7 @@ External system integrations, LLM bridges, and production infrastructure.
 | External predicates | `client.RegisterExternalPredicate()` | hybrid_rag |
 | EvaluateSteering | `Engine().EvaluateSteering()` | hybrid_rag, route_chaining |
 | Security / taint labels | `core.Envelope.SecurityLabels` | jailbreak_proof_agent, hybrid_rag |
-| Policy violation detection | `core.IsPolicyViolationError()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning, gherkin_policy |
+| Policy violation detection | `core.IsPolicyViolationError()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning |
 | OODA cognitive loop (5-phase) | `sdk/ooda` | ooda_document_generator |
 | RunOODA / RunOODAEAST | `sdk/ooda` | ooda_east_generation |
 | EAST steering (entropy/saliency) | `sdk/ooda.EASTState` | ooda_east_generation, route_chaining |
