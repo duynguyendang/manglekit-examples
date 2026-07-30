@@ -24,7 +24,7 @@ vet:
 
 clean:
 	$(GO) clean ./...
-	rm -f */main */hybrid_rag */*.test */*.out */*.cov
+	rm -f */*.test */*.out */*.cov
 
 # Run a specific example: make run/code_to_policy_extractor
 run/%:
