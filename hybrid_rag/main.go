@@ -261,12 +261,9 @@ func main() {
 	}
 
 	// 2. Configure Client
-	// NOTE (CODE_REVIEW P0.3): sdk.WithFailMode is a NO-OP for the
-	// policy gate — it does NOT change block behavior. The default
-	// failure mode is already "closed". Whether a request is blocked is
-	// decided by the policy + the supervisor PRE-CHECK, not by
-	// WithFailMode. We therefore rely on the default and do not pass a
-	// fail-mode option here.
+	// The supervisor pre-check gate is always fail-closed (WithFailMode was
+	// removed in v0.6). Whether a request is blocked is decided by the
+	// policy + the supervisor pre-check.
 	client, err := sdk.NewClient(ctx,
 		sdk.WithMemory(customMem),
 	)
@@ -416,7 +413,7 @@ func runPIIScenario(ctx context.Context, client *sdk.Client, name, user string, 
 	// halt("Output", ...) AFTER the inner action runs. This works when
 	// the verifier (pii_scan) succeeds, but the POST-check is FAIL-OPEN
 	// on verifier error (see docs/CODE_REVIEW.md P0.1 and
-	// docs/okf/architecture/overview.md:43 — internal/supervisor/action.go
+	// docs/context/architecture.md — internal/supervisor/action.go
 	// only blocks when `err == nil && !res.Pass`). The TRUSTWORTHY gate
 	// is the supervisor PRE-CHECK (which blocks before the action runs)
 	// — see TestPreCheckFailClosed. We keep the existing post-check

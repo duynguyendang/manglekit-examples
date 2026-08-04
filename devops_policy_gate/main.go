@@ -14,8 +14,8 @@
 //   - P0.1: the supervisor POST-check (Reflect) is FAIL-OPEN, so only the
 //     PRE-CHECK is a guaranteed block. All scenarios below rely solely on the
 //     pre-check.
-//   - P0.3: WithFailMode is a NO-OP for the policy gate; it is intentionally
-//     not used here and does not change block behavior.
+//   - P0.3 (resolved in v0.6): WithFailMode was removed; the pre-check gate
+//     is always fail-closed.
 //
 // The Mangle analyzer rejects cross-fact :lt/:lte built-ins, so the numeric
 // comparisons themselves are performed in Go (see attachPrecomputedChecks).

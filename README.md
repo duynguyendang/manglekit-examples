@@ -168,10 +168,9 @@ These examples pin the **current** architecture behavior:
   violations (T0/T1) before and after execution, but defers to the caller on internal
   verifier failures.
 
-- **`WithFailMode` is advisory for the policy gate.** It controls extraction failure behavior
-  (`internal/supervisor/sdk_adapter.go:271`) — "open" allows execution when text extraction
-  fails, "closed" blocks. The gate itself (pre-check / post-check) ignores `WithFailMode`
-  and blocks on tier regardless.
+- **Fail-closed is the only mode (v0.6).** `WithFailMode` was removed: the
+  pre-check gate always fails closed, and text-extraction failures block
+  execution. Block behavior is decided by policy alone.
 
 - **Datalog escaping is applied** on the live path (`atomToDatalog` at `sdk_adapter.go:22`)
   via `engine.EscapeString` and an identifier-regex predicate check, and was hardened
@@ -180,6 +179,8 @@ These examples pin the **current** architecture behavior:
 
 - **`ooda.NewLoop` (used by ooda_document_generator) is experimental** (ROADMAP §P3); the
   canonical entry points are `ooda.NewBuilder()...Build()` + `ooda.RunOODA`/`RunOODAEAST`.
+  `RunOODAEAST` itself is experimental — it has no production caller yet and is
+  exercised by tests and the `ooda_east_generation` example only.
 
 - **`client.Execute` is steering-gated** (errors unless `WithSteeringEnabled`). Examples
   prefer `ExecuteByName`/`generator.Generate`.

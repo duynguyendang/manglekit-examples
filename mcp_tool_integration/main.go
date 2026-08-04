@@ -99,8 +99,8 @@ func main() {
 	// (real server up or down) so the gate contract is deterministic and the
 	// inner-action execution can be recorded/asserted.
 	//
-	// NOTE: WithFailMode is a NO-OP for the gate (P0.3 regression), so it is
-	// intentionally not relied upon to change block behavior here.
+	// NOTE: the pre-check gate is always fail-closed (WithFailMode was
+	// removed in v0.6); block behavior is decided by policy alone.
 	simActions := map[string]*simulatedMCPAction{}
 	for _, action := range simulatedMCPTools(mcpCfg.Name) {
 		sa := action.(*simulatedMCPAction)

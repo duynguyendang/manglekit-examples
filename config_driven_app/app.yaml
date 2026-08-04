@@ -4,8 +4,6 @@
 policy:
   path: ""  # loaded separately for demo
 
-failure_mode: "closed"
-
 observability:
   enabled: true
   log_level: "info"

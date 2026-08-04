@@ -47,7 +47,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("  FailureMode: %s\n", cfg.FailureMode)
 	fmt.Printf("  Observability.Enabled: %v\n", cfg.Observability.Enabled)
 	fmt.Printf("  Actions: %d defined\n", len(cfg.Actions))
 	fmt.Println()
