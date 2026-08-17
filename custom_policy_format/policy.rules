@@ -1,0 +1,9 @@
+# Example format for the custom_policy_format demo.
+#
+# This is a deliberately simple, toy policy format to illustrate the
+# policy-loader extension point. Users write rules in their own DSL and
+# compile them to Datalog in application code (see compiler.go), then load
+# via client.LoadPolicy. No Datalog parser ships for this format.
+
+deny action "llm_generate" label "pii" -> "PII data must not leave the organization"
+deny action "sensitive_action" meta "user_verified" "false" -> "User must be verified before sensitive actions"

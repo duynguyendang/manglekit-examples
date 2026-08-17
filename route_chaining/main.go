@@ -25,6 +25,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/duynguyendang/manglekit/sdk/ooda"
+	"github.com/duynguyendang/manglekit/x/east"
 )
 
 // mockReasoningPort implements ports.ReasoningPort with Datalog rules
@@ -147,7 +148,7 @@ func main() {
 		frame.ReasoningPort = reasoner
 		frame.EAST.TrustTier = ooda.Tier0Kernel
 
-		path := frame.EAST.SteerKB(ctx, frame, reasoner)
+		path := east.SteerKB(ctx, &frame.EAST, frame, reasoner)
 		fmt.Printf("  %s → %s path\n", tc.name, pathName(path))
 
 		if path != tc.wantPath {
@@ -182,14 +183,14 @@ func main() {
 	}
 
 	for _, tc := range paradoxCases {
-		east := &ooda.EASTState{
+		es := &ooda.EASTState{
 			LogicSuccess:       tc.logicSuccess,
 			EntropyCoefficient: tc.entropyCoeff,
 			ParadoxThreshold:   0.8,
 		}
-		mag := east.CalculateMagnitude()
-		paradox := east.ShouldInjectParadox()
-		temp := east.Temperature()
+		mag := east.CalculateMagnitude(es)
+		paradox := east.ShouldInjectParadox(es)
+		temp := east.Temperature(es)
 
 		fmt.Printf("  %s:\n", tc.name)
 		fmt.Printf("    Magnitude=%.3f, Paradox=%v, Temperature=%.1f\n", mag, paradox, temp)

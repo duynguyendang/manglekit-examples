@@ -9,14 +9,41 @@ import (
 	"github.com/duynguyendang/manglekit/sdk"
 )
 
-func loadGherkinPolicy(t *testing.T, ctx context.Context, client *sdk.Client) {
+func loadRules(t *testing.T, ctx context.Context, client *sdk.Client) string {
 	t.Helper()
-	featureContent, err := os.ReadFile("data_governance.feature")
+	src, err := os.ReadFile("policy.rules")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := client.LoadGherkinPolicy(ctx, string(featureContent)); err != nil {
+	policy, err := compileRules(string(src))
+	if err != nil {
 		t.Fatal(err)
+	}
+	if err := client.LoadPolicy(ctx, policy); err != nil {
+		t.Fatal(err)
+	}
+	return policy
+}
+
+func TestCompileRules(t *testing.T) {
+	src := `# comment
+deny action "a" label "l" -> "msg"
+deny action "b" meta "k" "v" -> "m2"
+`
+	policy, err := compileRules(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "halt(\"Req\", \"msg\", \"T3\") :- action_operation(\"Req\", \"a\"), label(\"l\").\n" +
+		"halt(\"Req\", \"m2\", \"T3\") :- action_operation(\"Req\", \"b\"), meta(\"k\", \"v\").\n"
+	if policy != want {
+		t.Fatalf("unexpected policy:\n%s\nwant:\n%s", policy, want)
+	}
+}
+
+func TestCompileRulesRejectsBadLine(t *testing.T) {
+	if _, err := compileRules("not a policy line"); err == nil {
+		t.Fatal("expected error for unrecognized rule")
 	}
 }
 
@@ -27,7 +54,7 @@ func TestPiiLabelHalts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Shutdown(ctx)
-	loadGherkinPolicy(t, ctx, client)
+	loadRules(t, ctx, client)
 
 	env := core.NewEnvelope("test data")
 	env.AddLabel("pii")
@@ -52,7 +79,7 @@ func TestPublicLabelProceeds(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Shutdown(ctx)
-	loadGherkinPolicy(t, ctx, client)
+	loadRules(t, ctx, client)
 
 	env := core.NewEnvelope("test data")
 	env.AddLabel("public")
@@ -70,7 +97,7 @@ func TestUnverifiedUserHalts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Shutdown(ctx)
-	loadGherkinPolicy(t, ctx, client)
+	loadRules(t, ctx, client)
 
 	env := core.NewEnvelope("test data")
 	env.SetMeta("user_verified", "false")
@@ -91,7 +118,7 @@ func TestVerifiedUserProceeds(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Shutdown(ctx)
-	loadGherkinPolicy(t, ctx, client)
+	loadRules(t, ctx, client)
 
 	env := core.NewEnvelope("test data")
 	env.SetMeta("user_verified", "true")

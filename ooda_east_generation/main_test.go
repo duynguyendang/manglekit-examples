@@ -6,6 +6,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk/ooda"
+	"github.com/duynguyendang/manglekit/x/east"
 )
 
 func TestRunOODA_Success(t *testing.T) {
@@ -39,7 +40,7 @@ func TestRunOODAEAST_Success(t *testing.T) {
 		Action:  core.NewActionEnvelope("gen", nil),
 	}}
 	frame := ooda.NewBuilder().WithInput("gen test").WithBrain(brain).WithRegistry(registry).Build()
-	result, err := ooda.RunOODAEAST(ctx, frame)
+	result, err := east.RunOODAEAST(ctx, frame)
 	if err != nil {
 		t.Fatalf("RunOODAEAST: %v", err)
 	}
@@ -65,7 +66,7 @@ func TestRunOODAEAST_Retry(t *testing.T) {
 		failNext: 1,
 	}
 	frame := ooda.NewBuilder().WithInput("retry test").WithBrain(brain).WithRegistry(registry).WithMaxRetries(3).Build()
-	result, err := ooda.RunOODAEAST(ctx, frame)
+	result, err := east.RunOODAEAST(ctx, frame)
 	if err != nil {
 		t.Fatalf("Failed after retry: %v", err)
 	}
@@ -138,7 +139,7 @@ func TestRunOODAEAST_HaltDecision(t *testing.T) {
 		Action:  core.NewActionEnvelope("blocked", nil),
 	}}
 	frame := ooda.NewBuilder().WithInput("halt").WithBrain(brain).Build()
-	_, err := ooda.RunOODAEAST(ctx, frame)
+	_, err := east.RunOODAEAST(ctx, frame)
 	if err == nil {
 		t.Error("expected error for HALT")
 	}

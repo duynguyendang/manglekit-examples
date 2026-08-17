@@ -8,6 +8,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/duynguyendang/manglekit/sdk/ooda"
+	"github.com/duynguyendang/manglekit/x/east"
 )
 
 func loadRoutingPolicy(t *testing.T, ctx context.Context, client *sdk.Client) {
@@ -100,7 +101,7 @@ func TestSteerKB_FastPath(t *testing.T) {
 	frame.ReasoningPort = reasoner
 	frame.EAST.TrustTier = ooda.Tier0Kernel
 
-	path := frame.EAST.SteerKB(context.Background(), frame, reasoner)
+	path := east.SteerKB(context.Background(), &frame.EAST, frame, reasoner)
 	if path != ooda.PathFast {
 		t.Errorf("expected fast path, got %s", pathName(path))
 	}
@@ -114,7 +115,7 @@ func TestSteerKB_SlowPath(t *testing.T) {
 	frame.ReasoningPort = reasoner
 	frame.EAST.TrustTier = ooda.Tier0Kernel
 
-	path := frame.EAST.SteerKB(context.Background(), frame, reasoner)
+	path := east.SteerKB(context.Background(), &frame.EAST, frame, reasoner)
 	if path != ooda.PathSlow {
 		t.Errorf("expected slow path, got %s", pathName(path))
 	}
@@ -126,32 +127,32 @@ func TestSteerKB_StandardPath(t *testing.T) {
 	frame.ReasoningPort = reasoner
 	frame.EAST.TrustTier = ooda.Tier0Kernel
 
-	path := frame.EAST.SteerKB(context.Background(), frame, reasoner)
+	path := east.SteerKB(context.Background(), &frame.EAST, frame, reasoner)
 	if path != ooda.PathStandard {
 		t.Errorf("expected standard path, got %s", pathName(path))
 	}
 }
 
 func TestParadoxInjection(t *testing.T) {
-	east := &ooda.EASTState{
-		LogicSuccess:      0.1,
+	es := &ooda.EASTState{
+		LogicSuccess:       0.1,
 		EntropyCoefficient: 1.0,
-		ParadoxThreshold:  0.8,
+		ParadoxThreshold:   0.8,
 	}
-	mag := east.CalculateMagnitude()
-	if !east.ShouldInjectParadox() {
+	mag := east.CalculateMagnitude(es)
+	if !east.ShouldInjectParadox(es) {
 		t.Errorf("expected paradox injection at magnitude %.3f > 0.8", mag)
 	}
 }
 
 func TestNoParadoxWhenLow(t *testing.T) {
-	east := &ooda.EASTState{
-		LogicSuccess:      0.9,
+	es := &ooda.EASTState{
+		LogicSuccess:       0.9,
 		EntropyCoefficient: 2.0,
-		ParadoxThreshold:  0.8,
+		ParadoxThreshold:   0.8,
 	}
-	mag := east.CalculateMagnitude()
-	if east.ShouldInjectParadox() {
+	mag := east.CalculateMagnitude(es)
+	if east.ShouldInjectParadox(es) {
 		t.Errorf("unexpected paradox injection at magnitude %.3f", mag)
 	}
 }

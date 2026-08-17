@@ -42,7 +42,7 @@ Core governance patterns — the simplest entry point.
 | Example | Description | API Key | Run |
 |---|---|---|---|
 | **code_to_policy_extractor** | Dynamic Architecture Linter enforcing Clean Architecture rules on PRs | No | `go run ./code_to_policy_extractor/` |
-| **gherkin_policy** | BDD Gherkin feature files compiled to Datalog policies via `LoadGherkinPolicy` | No | `go run ./gherkin_policy/` |
+| **custom_policy_format** | A user-defined policy DSL compiled to Datalog and loaded via `LoadPolicy` — the documented replacement for the removed Gherkin compiler | No | `go run ./custom_policy_format/` |
 | **config_driven_app** | Declarative YAML config, generics API (`Define[In,Out]`), and provider registry | No | `go run ./config_driven_app/` |
 | **real_llm_gate** | Minimal supervised LLM call with `QuickClient` + `RegisterSupervised`: allowed and policy-denied case | Optional (mock fallback) | `go run ./real_llm_gate/` |
 
@@ -56,6 +56,7 @@ Zero-trust policy enforcement — the core value prop of manglekit.
 | **compliance_proof** | GDPR as tiered Datalog — `AssessPlan` renders `AuditTrail` as machine-checkable proof | No | `go run ./compliance_proof/` |
 | **jailbreak_proof_agent** | T0 taint axiom blocks data exfiltration — mock LLM complies with injection but kernel holds | No | `go run ./jailbreak_proof_agent/` |
 | **verified_reasoning** | Cheap model + symbolic verifier = certified-correct output via verify-retry loop | No | `go run ./verified_reasoning/` |
+| **temporal_compliance** | Experimental temporal reasoning: is an authorization/​fact still valid at the time a transaction occurred? | No | `go run ./temporal_compliance/` |
 
 ### 3. Knowledge & Reasoning
 
@@ -81,7 +82,7 @@ Observe-Orient-Decide-Act loops with entropic steering and self-correction.
 | Example | Description | API Key | Run |
 |---|---|---|---|
 | **ooda_document_generator** | Full 5-phase OODA loop with self-correction and Datalog policies | No | `go run ./ooda_document_generator/` |
-| **ooda_east_generation** | `RunOODA` / `RunOODAEAST` with EAST steering, mixed-precision memory, Teacher-Student retry | No | `go run ./ooda_east_generation/` |
+| **ooda_east_generation** | `RunOODA` (core) / `x/east.RunOODAEAST` with EAST steering, mixed-precision memory, Teacher-Student retry | No | `go run ./ooda_east_generation/` |
 | **ooda_genkit_flow** | OODA loop exposed as Genkit HTTP flows — `DefineFlow`, `DefineStreamingFlow`, `FlowRegistry` | No (mock Brain) | `go run ./ooda_genkit_flow/` |
 | **route_chaining** | `ROUTE` decision outcome, dynamic action chaining, paradox injection, SteerKB | No | `go run ./route_chaining/` |
 
@@ -115,7 +116,7 @@ External system integrations, LLM bridges, and production infrastructure.
 |---|---|---|
 | Datalog policy engine | `core.Evaluator` | All examples |
 | Zero-trust supervisor | `client.Supervise()` → `client.ExecuteByName()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning, session_recovery, config_driven_app |
-| Assess (policy evaluation) | `Engine().Assess()` | gherkin_policy, route_chaining, config_driven_app, knowledge_graph_reasoning |
+| Assess (policy evaluation) | `Engine().Assess()` | custom_policy_format, route_chaining, config_driven_app, knowledge_graph_reasoning |
 | AssessPlan (pure policy-decision) | `Engine().AssessPlan()` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_document_generator, jailbreak_proof_agent |
 | AuditTrail rendering | `core.AuditTrail` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_document_generator |
 | Tiered governance (T0–T3) | `core.Tier` | compliance_proof, devops_policy_gate, ooda_document_generator |
@@ -129,14 +130,14 @@ External system integrations, LLM bridges, and production infrastructure.
 | Security / taint labels | `core.Envelope.SecurityLabels` | jailbreak_proof_agent, hybrid_rag |
 | Policy violation detection | `core.IsPolicyViolationError()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning |
 | OODA cognitive loop (5-phase) | `sdk/ooda` | ooda_document_generator |
-| RunOODA / RunOODAEAST | `sdk/ooda` | ooda_east_generation |
-| EAST steering (entropy/saliency) | `sdk/ooda.EASTState` | ooda_east_generation, route_chaining |
+| RunOODA / RunOODAEAST | `sdk/ooda` (`RunOODA`), `x/east` (`RunOODAEAST`) | ooda_east_generation |
+| EAST steering (entropy/saliency) | `x/east` | ooda_east_generation, route_chaining |
 | Mixed-precision memory | `ooda.PinAxiom` / `AddContext` / `ShaveContext` | ooda_east_generation |
 | Tool registry & dispatcher | `ooda.Registry` / `ooda.Dispatcher` | ooda_east_generation, ooda_document_generator |
 | OODA as Genkit flow | `adapters/ai.OODAFlow` | ooda_genkit_flow |
 | FlowRegistry | `adapters/ai.FlowRegistry` | ooda_genkit_flow |
 | ROUTE decision (dynamic chaining) | `core.DecisionRoute` | route_chaining |
-| Paradox injection | `EASTState.ShouldInjectParadox()` | route_chaining |
+| Paradox injection | `x/east.ShouldInjectParadox()` | route_chaining |
 | MCP integration | `adapters/mcp` | mcp_tool_integration |
 | Genkit middleware | `adapters/ai` | genkit_middleware_showcase, ooda_genkit_flow |
 | Session state recovery | `core.StateProvider` | session_recovery |
@@ -146,7 +147,7 @@ External system integrations, LLM bridges, and production infrastructure.
 | Condition evaluation (Datalog) | `AgentSystem.EvaluateCondition()` | multi_agent_research |
 | Taint labels (security) | `core.Envelope.SecurityLabels` | jailbreak_proof_agent, hybrid_rag |
 | Symbolic verification | `Engine().Query()` | verified_reasoning |
-| Gherkin → Datalog compilation | `client.LoadGherkinPolicy()` | gherkin_policy |
+| Custom policy format → Datalog | user DSL → `Client.LoadPolicy()` | custom_policy_format |
 | Generics API | `sdk.Define[In,Out]()` | config_driven_app |
 | Declarative YAML config | `config.Load()` / `sdk.WithConfig()` | config_driven_app |
 | Provider registry | `sdk.RegisterProvider()` / `sdk.WithProviderConfig()` | config_driven_app |
@@ -186,9 +187,9 @@ These examples pin the **current** architecture behavior:
   Facts built from dynamic/trusted-local values are safe.
 
 - **`ooda.NewLoop` (used by ooda_document_generator) is experimental** (ROADMAP §P3); the
-  canonical entry points are `ooda.NewBuilder()...Build()` + `ooda.RunOODA`/`RunOODAEAST`.
-  `RunOODAEAST` itself is experimental — it has no production caller yet and is
-  exercised by tests and the `ooda_east_generation` example only.
+  canonical entry points are `ooda.NewBuilder()...Build()` + `ooda.RunOODA` and
+  `x/east.RunOODAEAST`. Since v0.8 the EAST (OODA v4) path lives in the optional
+  `x/east` extension — the deterministic `sdk/ooda` core stays dependency-free of it.
 
 - **`client.Execute` is steering-gated** (errors unless `WithSteeringEnabled`). Examples
   prefer `ExecuteByName`/`generator.Generate`.
@@ -211,7 +212,7 @@ manglekit-examples/
   devops_policy_gate/          -- CI/CD Security Gates
   extractor_bridge/            -- LLM text→struct neuro-symbolic bridge          ★
   genkit_middleware_showcase/  -- Genkit middleware composition
-  gherkin_policy/              -- BDD Gherkin → Datalog compilation               ★
+  custom_policy_format/         -- user DSL → Datalog via LoadPolicy (ext point)  ★
   goal_based_planning/         -- Datalog-driven action planning
   hybrid_rag/                  -- Multi-Tenant RAG with access control
   jailbreak_proof_agent/       -- T0 taint axiom blocks exfiltration
@@ -226,6 +227,7 @@ manglekit-examples/
   route_chaining/              -- ROUTE decision + paradox injection             ★
   session_recovery/            -- Durable state persistence
   silo_storage/                -- SessionStore, TransientFacts, Vector Store
+  temporal_compliance/          -- temporal: was a fact valid at time X?        ★
   verified_reasoning/          -- Symbolic verify-retry loop
   real_llm_gate/               -- Minimal supervised LLM call (QuickClient)     ★
   persistent_store/            -- BadgerDB durable session/knowledge store     ★

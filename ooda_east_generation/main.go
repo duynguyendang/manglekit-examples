@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk/ooda"
+	"github.com/duynguyendang/manglekit/x/east"
 )
 
 // =========================================================================
@@ -138,7 +139,7 @@ func main() {
 		WithRegistry(registry2).
 		Build()
 
-	result2, err := ooda.RunOODAEAST(ctx, frame2)
+	result2, err := east.RunOODAEAST(ctx, frame2)
 	if err != nil {
 		fmt.Printf("  RunOODAEAST error: %v\n", err)
 	} else {
@@ -177,7 +178,7 @@ func main() {
 		WithMaxRetries(3).
 		Build()
 
-	result3, err := ooda.RunOODAEAST(ctx, frame3)
+	result3, err := east.RunOODAEAST(ctx, frame3)
 	if err != nil {
 		fmt.Printf("  RunOODAEAST error: %v\n", err)
 	} else {
