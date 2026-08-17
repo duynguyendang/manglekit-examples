@@ -7,7 +7,7 @@
 #   clean         — clean test caches and binaries
 #   run/<name>    — run a specific example (e.g. make run/code_to_policy_extractor)
 #
-# Requires: Go 1.24+, manglekit as a sibling at ../manglekit
+# Requires: Go 1.25.1+, manglekit as a sibling at ../manglekit
 
 GO ?= go
 

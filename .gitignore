@@ -39,3 +39,6 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# BadgerDB runtime data created by the persistent_store example/test
+persistent_store/persistent_store_data/

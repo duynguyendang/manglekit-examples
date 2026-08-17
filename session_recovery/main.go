@@ -5,82 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/duynguyendang/manglekit/testutil"
 )
 
-// InMemoryStateProvider implements core.StateProvider using a thread-safe map.
-// For production, replace with Redis, Badger, or Postgres-backed implementation.
-type InMemoryStateProvider struct {
-	store map[string]*core.SessionState
-	mu    sync.RWMutex
-}
-
-func NewInMemoryStateProvider() *InMemoryStateProvider {
-	return &InMemoryStateProvider{
-		store: make(map[string]*core.SessionState),
-	}
-}
-
-func (p *InMemoryStateProvider) Get(ctx context.Context, sessionID string) (any, error) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	state, ok := p.store[sessionID]
-	if !ok {
-		return nil, nil
-	}
-	data, err := json.Marshal(state)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal state: %w", err)
-	}
-	return data, nil
-}
-
-func (p *InMemoryStateProvider) Set(ctx context.Context, sessionID string, state any) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	var parsed core.SessionState
-	switch v := state.(type) {
-	case []byte:
-		if err := json.Unmarshal(v, &parsed); err != nil {
-			return fmt.Errorf("failed to unmarshal state: %w", err)
-		}
-	case *core.SessionState:
-		parsed = *v
-	case core.SessionState:
-		parsed = v
-	default:
-		data, err := json.Marshal(v)
-		if err != nil {
-			return fmt.Errorf("failed to marshal state: %w", err)
-		}
-		if err := json.Unmarshal(data, &parsed); err != nil {
-			return fmt.Errorf("failed to unmarshal state: %w", err)
-		}
-	}
-
-	p.store[sessionID] = &parsed
-	return nil
-}
-
-func (p *InMemoryStateProvider) Delete(ctx context.Context, sessionID string) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	delete(p.store, sessionID)
-	return nil
-}
-
-func (p *InMemoryStateProvider) Close(ctx context.Context) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.store = make(map[string]*core.SessionState)
-	return nil
-}
+// The in-memory core.StateProvider implementation now lives in
+// manglekit/testutil (testutil.NewInMemoryStateProvider) — this example just
+// consumes it instead of hand-rolling its own copy.
 
 // SessionManager wraps a StateProvider with checkpoint/hydrate logic.
 // This mirrors what the SDK's internal statemanager does.
@@ -156,7 +90,7 @@ func main() {
 	}
 
 	sessionID := "workflow-session-001"
-	provider := NewInMemoryStateProvider()
+	provider := testutil.NewInMemoryStateProvider()
 
 	// Create SDK client with the state provider to demonstrate sdk.WithStateProvider()
 	client, err := sdk.NewClient(ctx, sdk.WithStateProvider(provider))
@@ -273,7 +207,7 @@ func main() {
 // provided StateProvider on every PROCEED step. It registers a supervised
 // mock action, executes it via ExecuteByName, then verifies the provider
 // captured the session state.
-func runSupervisedIntegration(ctx context.Context, client *sdk.Client, provider *InMemoryStateProvider) {
+func runSupervisedIntegration(ctx context.Context, client *sdk.Client, provider core.StateProvider) {
 	fmt.Println("--- SDK StateProvider Integration ---")
 	fmt.Println("  Registering supervised mock action and executing...")
 

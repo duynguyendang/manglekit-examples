@@ -8,6 +8,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/multiagent"
+	"github.com/duynguyendang/manglekit/testutil"
 )
 
 func setup(t *testing.T, ctx context.Context) *multiagent.AgentSystem {
@@ -84,7 +85,7 @@ func TestHydratedWorkflowExecutor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadWorkflow: %v", err)
 	}
-	ss := newInMemorySessionStore()
+	ss := testutil.NewWorkflowSessionStore()
 	finder := &fixedAgentFinder{
 		roleToAgent: map[string]string{
 			"researcher": "researcher-a",
@@ -120,7 +121,7 @@ func TestSessionResume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadWorkflow: %v", err)
 	}
-	ss := newInMemorySessionStore()
+	ss := testutil.NewWorkflowSessionStore()
 	finder := &fixedAgentFinder{
 		roleToAgent: map[string]string{
 			"researcher": "researcher-a",

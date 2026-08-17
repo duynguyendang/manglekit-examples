@@ -13,8 +13,9 @@ make clean       # clean test artifacts and binaries
 
 ## Prerequisites
 
-- Go 1.25+
-- A Google AI API key (`GOOGLE_API_KEY`) for examples marked "Requires API key"
+- Go 1.25.1
+- A Google AI API key (`GOOGLE_API_KEY`) for examples marked "Yes" in the API Key column
+- Optional: an OpenAI key (`OPENAI_API_KEY`) for **real_llm_gate**'s live mode (falls back to a deterministic mock without any key)
 
 ## Setup
 
@@ -43,6 +44,7 @@ Core governance patterns — the simplest entry point.
 | **code_to_policy_extractor** | Dynamic Architecture Linter enforcing Clean Architecture rules on PRs | No | `go run ./code_to_policy_extractor/` |
 | **gherkin_policy** | BDD Gherkin feature files compiled to Datalog policies via `LoadGherkinPolicy` | No | `go run ./gherkin_policy/` |
 | **config_driven_app** | Declarative YAML config, generics API (`Define[In,Out]`), and provider registry | No | `go run ./config_driven_app/` |
+| **real_llm_gate** | Minimal supervised LLM call with `QuickClient` + `RegisterSupervised`: allowed and policy-denied case | Optional (mock fallback) | `go run ./real_llm_gate/` |
 
 ### 2. Policy & Governance
 
@@ -104,6 +106,8 @@ External system integrations, LLM bridges, and production infrastructure.
 | **policy_copilot** | NL→Datalog rule generation with schema extraction, few-shot learning, and syntax verification | No (mock LLM) | `go run ./policy_copilot/` |
 | **extractor_bridge** | LLM text→struct extraction — the neuro-symbolic bridge feeding Datalog | No (mock LLM) | `go run ./extractor_bridge/` |
 | **production_resilience** | Circuit breaker (Closed→Open→HalfOpen) + OpenTelemetry tracing + middleware | No | `go run ./production_resilience/` |
+| **persistent_store** | BadgerDB-backed session/knowledge store (`WithSyncWrites(true)` durability) with close/reopen restart-resume | No | `go run ./persistent_store/` |
+| **http_service** | manglekit embedded in a `net/http` server: `/ask` endpoint executing a supervised action (403 on policy deny) | No | `go run ./http_service/` |
 
 ## Manglekit Features Demonstrated
 
@@ -153,6 +157,10 @@ External system integrations, LLM bridges, and production infrastructure.
 | OpenTelemetry tracing | `sdk.WithStdoutTracer()` | production_resilience |
 | Scenario runner (BDD tests) | `scenario.Run()` | jailbreak_proof_agent |
 | Struct → Datalog (Zero-Config Reflection) | `mangle` struct tags | code_to_policy_extractor, hybrid_rag, policy_copilot |
+| QuickClient / RegisterSupervised | `manglekit.QuickClient` / `Client.RegisterSupervised` | real_llm_gate, http_service |
+| cwd-safe fixture loading | `manglekit.MustReadFile` | hybrid_rag, compliance_proof, route_chaining, verified_reasoning, real_llm_gate, http_service |
+| Test doubles (mocks) | `manglekit/testutil` (MockLLM, DeterministicEmbedder, InMemoryStateProvider, WorkflowSessionStore) | hybrid_rag, silo_storage, session_recovery, multi_agent_research, real_llm_gate, http_service |
+| Durable BadgerDB state | `WithSyncWrites(true)` + batch fact writes | persistent_store |
 
 ## Behavior notes
 
@@ -219,6 +227,9 @@ manglekit-examples/
   session_recovery/            -- Durable state persistence
   silo_storage/                -- SessionStore, TransientFacts, Vector Store
   verified_reasoning/          -- Symbolic verify-retry loop
+  real_llm_gate/               -- Minimal supervised LLM call (QuickClient)     ★
+  persistent_store/            -- BadgerDB durable session/knowledge store     ★
+  http_service/                -- manglekit behind a net/http /ask endpoint    ★
 ```
 
 Each example has its own `package main` and can be run independently. ★ = new in this release.

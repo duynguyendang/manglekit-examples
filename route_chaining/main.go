@@ -21,6 +21,7 @@ import (
 	"math"
 	"os"
 
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/duynguyendang/manglekit/sdk/ooda"
@@ -53,10 +54,7 @@ func pathName(p ooda.ExecutionPath) string {
 func main() {
 	ctx := context.Background()
 
-	routingPolicy, err := os.ReadFile("route_chaining/routing.dl")
-	if err != nil {
-		log.Fatal(err)
-	}
+	routingPolicy := manglekit.MustReadFile("routing.dl")
 
 	client, err := sdk.NewClient(ctx)
 	if err != nil {
@@ -185,9 +183,9 @@ func main() {
 
 	for _, tc := range paradoxCases {
 		east := &ooda.EASTState{
-			LogicSuccess:      tc.logicSuccess,
+			LogicSuccess:       tc.logicSuccess,
 			EntropyCoefficient: tc.entropyCoeff,
-			ParadoxThreshold:  0.8,
+			ParadoxThreshold:   0.8,
 		}
 		mag := east.CalculateMagnitude()
 		paradox := east.ShouldInjectParadox()

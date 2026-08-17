@@ -25,35 +25,13 @@ import (
 	"github.com/duynguyendang/manglekit/adapters/vector"
 	"github.com/duynguyendang/manglekit/sdk"
 	"github.com/duynguyendang/manglekit/sdk/ports"
+	"github.com/duynguyendang/manglekit/testutil"
 )
 
 func exampleDir() string {
 	_, filename, _, _ := runtime.Caller(0)
 	return filepath.Dir(filename)
 }
-
-// =========================================================================
-// Mock embedder — deterministic, no API key
-// =========================================================================
-
-type mockEmbedder struct{}
-
-func (m *mockEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
-	// Return a deterministic vector based on text length
-	l := float32(len(text))
-	return []float32{l / 100.0, float32(int(l) % 10) / 10.0}, nil
-}
-
-func (m *mockEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float32, error) {
-	vecs := make([][]float32, len(texts))
-	for i, t := range texts {
-		v, _ := m.Embed(nil, t)
-		vecs[i] = v
-	}
-	return vecs, nil
-}
-
-func (m *mockEmbedder) Dimension() int { return 2 }
 
 // =========================================================================
 // Main
@@ -164,7 +142,7 @@ func main() {
 	// -------------------------------------------------------------------
 	fmt.Println("\n--- Demo 4: Vector Store (Cosine Similarity with Mock Embedder) ---")
 
-	store := vector.NewSimpleStore(&mockEmbedder{})
+	store := vector.NewSimpleStore(testutil.NewLengthEmbedder())
 
 	docs := map[string]string{
 		"doc1": "microservices architecture design",

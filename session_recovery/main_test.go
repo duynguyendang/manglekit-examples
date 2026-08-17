@@ -6,11 +6,12 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/testutil"
 	"github.com/google/uuid"
 )
 
 func TestInMemoryStateProvider_CRUD(t *testing.T) {
-	provider := NewInMemoryStateProvider()
+	provider := testutil.NewInMemoryStateProvider()
 	ctx := context.Background()
 
 	t.Run("Get non-existent returns nil", func(t *testing.T) {
@@ -102,7 +103,7 @@ func TestInMemoryStateProvider_CRUD(t *testing.T) {
 	})
 
 	t.Run("Concurrent access safety", func(t *testing.T) {
-		prov := NewInMemoryStateProvider()
+		prov := testutil.NewInMemoryStateProvider()
 		var wg sync.WaitGroup
 		n := 50
 
@@ -128,7 +129,7 @@ func TestInMemoryStateProvider_CRUD(t *testing.T) {
 }
 
 func TestSessionCheckpointAndRecover(t *testing.T) {
-	provider := NewInMemoryStateProvider()
+	provider := testutil.NewInMemoryStateProvider()
 	sm := NewSessionManager(provider)
 	ctx := context.Background()
 

@@ -12,6 +12,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,12 +22,14 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/duynguyendang/manglekit"
 	function "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/adapters/knowledge"
 	"github.com/duynguyendang/manglekit/adapters/vector"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/providers/google"
 	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/duynguyendang/manglekit/testutil"
 	"github.com/joho/godotenv"
 )
 
@@ -83,23 +86,6 @@ type Response struct {
 // pii_scan fact from a prior request from firing on an unrelated output.
 type LLMOutput struct {
 	Content string `json:"content" mangle:"content"`
-}
-
-type MockLLM struct{}
-
-func (m *MockLLM) Complete(ctx context.Context, prompt string) (string, error) {
-	return "I read the context", nil
-}
-func (m *MockLLM) Generate(ctx context.Context, prompt string, opts ...core.GenerateOption) (*core.LLMResponse, error) {
-	return &core.LLMResponse{
-		Text:  "I read the context: [Mock Content]",
-		Usage: map[string]int{"prompt": 10, "completion": 5},
-	}, nil
-}
-func (m *MockLLM) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
-	ch := make(chan core.StreamChunk)
-	close(ch)
-	return ch, nil
 }
 
 // CustomHybridMemory wraps the standard HybridMemory to inject "memory_hit" facts and security labels.
@@ -161,35 +147,6 @@ func (m *CustomHybridMemory) RecallWithFacts(ctx context.Context, query string) 
 	return strings.Join(contextParts, "\n\n"), meta, nil
 }
 
-// PIIMockLLM simulates an LLM that might accidentally leak PII
-type PIIMockLLM struct {
-	LeakPII bool
-}
-
-func (m *PIIMockLLM) Complete(ctx context.Context, prompt string) (string, error) {
-	if m.LeakPII {
-		return "The user's SSN is 123-45-6789 and credit card is 4532-1234-5678-9010", nil
-	}
-	return "I have processed your request safely", nil
-}
-func (m *PIIMockLLM) Generate(ctx context.Context, prompt string, opts ...core.GenerateOption) (*core.LLMResponse, error) {
-	if m.LeakPII {
-		return &core.LLMResponse{
-			Text:  "The user's SSN is 123-45-6789 and credit card is 4532-1234-5678-9010",
-			Usage: map[string]int{"prompt": 10, "completion": 5},
-		}, nil
-	}
-	return &core.LLMResponse{
-		Text:  "I have processed your request safely",
-		Usage: map[string]int{"prompt": 10, "completion": 5},
-	}, nil
-}
-func (m *PIIMockLLM) Stream(ctx context.Context, prompt string) (<-chan core.StreamChunk, error) {
-	ch := make(chan core.StreamChunk)
-	close(ch)
-	return ch, nil
-}
-
 func main() {
 	ctx := context.Background()
 	_ = godotenv.Load()
@@ -201,7 +158,13 @@ func main() {
 		if os.Getenv("GO_TEST") == "" {
 			fmt.Println("Warning: GOOGLE_API_KEY not set, using Mock Embedder")
 		}
-		embedder = &MockEmbedder{}
+		// Deterministic keyword embedder from manglekit/testutil: "launch"/"Project X"
+		// texts map to one vector, everything else to another. This is what makes
+		// the retrieval scenarios below deterministic without an API key.
+		embedder = testutil.NewKeywordEmbedder(
+			map[string][]float32{"launch": {0.9, 0.1}, "Project X": {0.9, 0.1}},
+			[]float32{0.1, 0.9},
+		)
 	} else {
 		g, err := google.NewEmbedder(ctx, apiKey, googleEmbedModel)
 		if err != nil {
@@ -213,11 +176,8 @@ func main() {
 	// Vector Store
 	vecStore := vector.NewSimpleStore(embedder)
 
-	// Load Knowledge Base
-	kbData, err := os.ReadFile("hybrid_rag/data/knowledge.json")
-	if err != nil {
-		log.Fatalf("Failed to read knowledge.json: %v", err)
-	}
+	// Load Knowledge Base (cwd-safe: resolves relative to this file's dir)
+	kbData := manglekit.MustReadFile("data/knowledge.json")
 	var docs []Document
 	if err := json.Unmarshal(kbData, &docs); err != nil {
 		log.Fatalf("Failed to parse knowledge.json: %v", err)
@@ -230,12 +190,7 @@ func main() {
 
 	// Load Document Security Labels from access_graph.nq has_label triples
 	docLabels := make(map[string]string)
-	graphFile, err := os.Open("hybrid_rag/data/access_graph.nq")
-	if err != nil {
-		log.Fatalf("Failed to read access_graph.nq: %v", err)
-	}
-	graphFacts, err := knowledge.ParseNTriples(graphFile)
-	graphFile.Close()
+	graphFacts, err := knowledge.ParseNTriples(bytes.NewReader(manglekit.MustReadFile("data/access_graph.nq")))
 	if err != nil {
 		log.Fatalf("Failed to parse access_graph.nq: %v", err)
 	}
@@ -270,7 +225,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}
-	client.SetLLM(&MockLLM{})
+	client.SetLLM(testutil.NewMockLLM("I read the context: [Mock Content]"))
 
 	// Register pii_scan(Output) external predicate BEFORE loading the
 	// policy. The Datalog policy uses this to detect US SSNs in LLM
@@ -284,35 +239,29 @@ func main() {
 	// escaping / injection concern (P0.5) therefore does not apply to
 	// this controlled scenario.
 	//
-	// Must use LoadFromSource (not LoadPolicy/AddPolicy) when loading
-	// policies that reference external predicates, because LoadFromSource
-	// scans the external-predicate registry and auto-emits the matching
-	// `Decl ... external()` declarations. AddPolicy does not, which causes
-	// "ext callback for predicate pii_scan(A0) that is not marked as
-	// external()" at evaluation time.
-		if err := client.RegisterExternalPredicate("pii_scan",
-			func(_ context.Context, inputs []any) ([][]any, error) {
-				if len(inputs) == 0 {
-					return nil, nil
-				}
-				s, ok := inputs[0].(string)
-				if !ok {
-					return nil, nil
-				}
-				if ssnPattern.MatchString(s) {
-					return [][]any{{s}}, nil
-				}
+	// Since v0.7 all policy load paths (LoadPolicy/AddPolicy included)
+	// auto-emit the matching `Decl ... external()` declarations for
+	// registered predicates, so LoadPolicy works here too.
+	if err := client.RegisterExternalPredicate("pii_scan",
+		func(_ context.Context, inputs []any) ([][]any, error) {
+			if len(inputs) == 0 {
 				return nil, nil
-			},
-		); err != nil {
+			}
+			s, ok := inputs[0].(string)
+			if !ok {
+				return nil, nil
+			}
+			if ssnPattern.MatchString(s) {
+				return [][]any{{s}}, nil
+			}
+			return nil, nil
+		},
+	); err != nil {
 		log.Fatalf("Failed to register pii_scan external predicate: %v", err)
 	}
 
-	policyData, err := os.ReadFile("hybrid_rag/policy.dl")
-	if err != nil {
-		log.Fatalf("Failed to read policy.dl: %v", err)
-	}
-	if err := client.LoadFromSource(ctx, string(policyData)); err != nil {
+	policyData := manglekit.MustReadFile("policy.dl")
+	if err := client.LoadPolicy(ctx, string(policyData)); err != nil {
 		log.Fatalf("Failed to load policy: %v", err)
 	}
 
@@ -344,10 +293,7 @@ func main() {
 
 	// 4. Load Code Repository Documents into Vector Store
 	fmt.Println("\n=== Feature 4: Multi-Tenant Code Repository Search ===")
-	codeDocsData, err := os.ReadFile("hybrid_rag/data/code_repo_docs.json")
-	if err != nil {
-		log.Fatalf("Failed to read code_repo_docs.json: %v", err)
-	}
+	codeDocsData := manglekit.MustReadFile("data/code_repo_docs.json")
 	var codeDocs []Document
 	if err := json.Unmarshal(codeDocsData, &codeDocs); err != nil {
 		log.Fatalf("Failed to parse code_repo_docs.json: %v", err)
@@ -548,37 +494,13 @@ func runEgressScenario(ctx context.Context, client *sdk.Client, name, user, dest
 	}
 }
 
-// MockEmbedder for testing without API Key
-type MockEmbedder struct{}
-
-func (m *MockEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
-	if strings.Contains(text, "launch") || strings.Contains(text, "Project X") {
-		return []float32{0.9, 0.1}, nil
-	}
-	return []float32{0.1, 0.9}, nil
-}
-func (m *MockEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
-	var res [][]float32
-	for _, t := range texts {
-		e, _ := m.Embed(ctx, t)
-		res = append(res, e)
-	}
-	return res, nil
-}
-func (m *MockEmbedder) Dimension() int { return 2 }
-
 // ============================================
 // Multi-Tenant Code Repository Search
 // ============================================
 
 func runMultiTenantScenarios(ctx context.Context, client *sdk.Client) {
 	// Load multi-tenant code repository knowledge graph
-	codeGraphFile, err := os.Open("hybrid_rag/data/code_repo_graph.nq")
-	if err != nil {
-		log.Fatalf("Failed to read code_repo_graph.nq: %v", err)
-	}
-	codeFacts, err := knowledge.ParseNTriples(codeGraphFile)
-	codeGraphFile.Close()
+	codeFacts, err := knowledge.ParseNTriples(bytes.NewReader(manglekit.MustReadFile("data/code_repo_graph.nq")))
 	if err != nil {
 		log.Fatalf("Failed to parse code_repo_graph.nq: %v", err)
 	}
@@ -586,15 +508,11 @@ func runMultiTenantScenarios(ctx context.Context, client *sdk.Client) {
 		log.Fatalf("Failed to load code graph facts: %v", err)
 	}
 
-	// Load multi-tenant access policy. Must go through LoadFromSource
-	// (not LoadPolicy / AddPolicy) so the engine auto-merges std.dl
-	// and re-emits the external-predicate declarations; the primary
-	// policy.dl references pii_scan, so a fresh LoadPolicy after
-	// the first would lose the stdlib + external-decl context.
-	codePolicyData, err := os.ReadFile("hybrid_rag/code_access_policy.dl")
-	if err != nil {
-		log.Fatalf("Failed to read code_access_policy.dl: %v", err)
-	}
+	// Load multi-tenant access policy with LoadFromSource to REPLACE the
+	// primary policy (a full reload that intentionally discards the first
+	// policy's rules while preserving the loaded base facts). External
+	// predicates (pii_scan) are re-declared automatically on this path too.
+	codePolicyData := manglekit.MustReadFile("code_access_policy.dl")
 	if err := client.LoadFromSource(ctx, string(codePolicyData)); err != nil {
 		log.Fatalf("Failed to load code access policy: %v", err)
 	}

@@ -29,15 +29,14 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"sync/atomic"
 
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk"
 )
 
 func exampleDir() string {
@@ -53,9 +52,9 @@ const (
 )
 
 // injectNumericFact appends a numeric predicate fact to env.Facts so
-// downstream Datalog queries can read structured numeric values. It is kept
-// for compatibility (e.g. pure Assess tests) but is NOT used by the governed
-// ExecuteByName path, which only forwards Metadata.
+// downstream Datalog queries can read structured numeric values (e.g. for
+// pure Assess tests). The governed ExecuteByName path can consume these
+// facts directly when the envelope is passed as the action input.
 func injectNumericFact(env *core.Envelope, predicate string, n int) {
 	env.Facts = append(env.Facts, fmt.Sprintf("%s(%d).", predicate, n))
 }
@@ -117,26 +116,29 @@ func attachPrecomputedChecks(env *core.Envelope, rawReplicas, rawHour string) {
 
 // executeGoverned forwards the given metadata (plus any Go-computed flags
 // carried on extra.Metadata) to the supervised action via ExecuteByName.
-// ExecuteByName builds a FRESH envelope from the payload and only forwards
-// Metadata as meta/2 facts, so all policy inputs must be metadata.
-func executeGoverned(ctx context.Context, client *sdk.Client, op string, meta map[string]string, extra *core.Envelope) (core.Envelope, error) {
+// ExecuteByName forwards a caller-supplied envelope's explicit facts,
+// labels, and metadata to the policy engine, so policy inputs can travel
+// directly on the envelope — no per-key WithMetadata plumbing needed.
+func executeGoverned(ctx context.Context, client *manglekit.Client, op string, meta map[string]string, extra *core.Envelope) (core.Envelope, error) {
+	env := core.NewEnvelope(map[string]string{})
+	for k, v := range meta {
+		env.Metadata[k] = v
+	}
 	if extra != nil {
 		for k, v := range extra.Metadata {
 			if s, ok := v.(string); ok {
-				meta[k] = s
+				env.Metadata[k] = s
 			}
 		}
+		env.Facts = append(env.Facts, extra.Facts...)
+		env.SecurityLabels = append(env.SecurityLabels, extra.SecurityLabels...)
 	}
-	opts := make([]sdk.ExecuteOption, 0, len(meta))
-	for k, v := range meta {
-		opts = append(opts, sdk.WithMetadata(k, v))
-	}
-	return client.ExecuteByName(ctx, op, map[string]string{}, opts...)
+	return client.ExecuteByName(ctx, op, env)
 }
 
 // runGoverned executes a governed action and reports whether the inner
 // (supervised) action actually ran, plus any error from ExecuteByName.
-func runGoverned(ctx context.Context, client *sdk.Client, op string, counter *int32, meta map[string]string, extra *core.Envelope) (ran bool, err error) {
+func runGoverned(ctx context.Context, client *manglekit.Client, op string, counter *int32, meta map[string]string, extra *core.Envelope) (ran bool, err error) {
 	before := atomic.LoadInt32(counter)
 	_, err = executeGoverned(ctx, client, op, meta, extra)
 	after := atomic.LoadInt32(counter)
@@ -154,18 +156,11 @@ func main() {
 	fmt.Println("3. Violations are blocked before reaching infrastructure")
 	fmt.Println()
 
-	client, err := sdk.NewClient(ctx)
+	// QuickClient constructs the client and loads the policy file in one
+	// call, with typed errors for a missing file or an invalid policy.
+	client, err := manglekit.QuickClient(ctx, filepath.Join(exampleDir(), "security_gate.dl"))
 	if err != nil {
-		log.Fatalf("Failed to initialize client: %v", err)
-	}
-
-	policyBytes, err := os.ReadFile(filepath.Join(exampleDir(), "security_gate.dl"))
-	if err != nil {
-		log.Fatalf("Failed to read security_gate.dl: %v", err)
-	}
-
-	if err := client.Engine().LoadPolicy(ctx, string(policyBytes)); err != nil {
-		log.Fatalf("Failed to load security gate policy: %v", err)
+		log.Fatalf("Failed to initialize client with security gate policy: %v", err)
 	}
 	fmt.Println("🛡️  Loaded security_gate.dl policy (governance + pre-computed checks).")
 	fmt.Println()
@@ -181,10 +176,10 @@ func main() {
 		destroy opCounter
 	)
 
-	client.RegisterAction("kubectl_scale", client.Supervise(function.New("kubectl_scale", scale.run("kubectl_scale"))))
-	client.RegisterAction("terraform_apply", client.Supervise(function.New("terraform_apply", apply.run("terraform_apply"))))
-	client.RegisterAction("kubectl_deploy", client.Supervise(function.New("kubectl_deploy", deploy.run("kubectl_deploy"))))
-	client.RegisterAction("terraform_destroy", client.Supervise(function.New("terraform_destroy", destroy.run("terraform_destroy"))))
+	client.RegisterSupervised("kubectl_scale", function.New("kubectl_scale", scale.run("kubectl_scale")))
+	client.RegisterSupervised("terraform_apply", function.New("terraform_apply", apply.run("terraform_apply")))
+	client.RegisterSupervised("kubectl_deploy", function.New("kubectl_deploy", deploy.run("kubectl_deploy")))
+	client.RegisterSupervised("terraform_destroy", function.New("terraform_destroy", destroy.run("terraform_destroy")))
 	fmt.Println("🔐 Registered supervised actions: kubectl_scale, terraform_apply, kubectl_deploy, terraform_destroy")
 	fmt.Println()
 
@@ -226,9 +221,9 @@ func main() {
 	// --- Scenario 3: Terraform Apply with Open Security Group ---
 	fmt.Println("--- Scenario 3: Terraform Apply with Open Security Group (Should Block) ---")
 	meta3 := map[string]string{
-		"resource":                 "aws_security_group",
-		"name":                     "prod-api-sg",
-		"has_open_security_group":  "true",
+		"resource":                "aws_security_group",
+		"name":                    "prod-api-sg",
+		"has_open_security_group": "true",
 	}
 	ran, err = runGoverned(ctx, client, "terraform_apply", &apply.executed, meta3, nil)
 	if core.IsPolicyViolationError(err) && !ran {
@@ -256,8 +251,8 @@ func main() {
 	// --- Scenario 5: Production Deploy Without Approval ---
 	fmt.Println("--- Scenario 5: Production Deploy Without Approval (Should Block) ---")
 	meta5 := map[string]string{
-		"image":       "api-server:v1.2.3",
-		"target_env":  "production",
+		"image":        "api-server:v1.2.3",
+		"target_env":   "production",
 		"has_approval": "false",
 	}
 	ran, err = runGoverned(ctx, client, "kubectl_deploy", &deploy.executed, meta5, nil)
@@ -320,8 +315,8 @@ func main() {
 	// --- Scenario 9: Public Database ---
 	fmt.Println("--- Scenario 9: Terraform Apply with Public Database (Should Block) ---")
 	meta9 := map[string]string{
-		"resource":              "aws_db_instance",
-		"name":                  "prod-postgres",
+		"resource":               "aws_db_instance",
+		"name":                   "prod-postgres",
 		"db_publicly_accessible": "true",
 	}
 	ran, err = runGoverned(ctx, client, "terraform_apply", &apply.executed, meta9, nil)

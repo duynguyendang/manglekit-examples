@@ -11,6 +11,7 @@ import (
 	"github.com/duynguyendang/manglekit/adapters/storage/session"
 	"github.com/duynguyendang/manglekit/adapters/vector"
 	"github.com/duynguyendang/manglekit/sdk/ports"
+	"github.com/duynguyendang/manglekit/testutil"
 )
 
 func TestSessionStoreCRUD(t *testing.T) {
@@ -95,7 +96,7 @@ func TestTransientFactsStore(t *testing.T) {
 }
 
 func TestMockEmbedder(t *testing.T) {
-	emb := &mockEmbedder{}
+	emb := testutil.NewLengthEmbedder()
 	if emb.Dimension() != 2 {
 		t.Errorf("expected dimension 2, got %d", emb.Dimension())
 	}
@@ -110,7 +111,7 @@ func TestMockEmbedder(t *testing.T) {
 
 func TestVectorStore(t *testing.T) {
 	ctx := context.Background()
-	store := vector.NewSimpleStore(&mockEmbedder{})
+	store := vector.NewSimpleStore(testutil.NewLengthEmbedder())
 
 	store.Upsert(ctx, "doc1", "alpha beta gamma")
 	store.Upsert(ctx, "doc2", "delta epsilon")

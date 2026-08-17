@@ -27,6 +27,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 )
@@ -43,10 +44,7 @@ type Case struct {
 func main() {
 	ctx := context.Background()
 
-	policyData, err := os.ReadFile("compliance_proof/gdpr_policy.dl")
-	if err != nil {
-		log.Fatal(err)
-	}
+	policyData := manglekit.MustReadFile("gdpr_policy.dl")
 
 	client, err := sdk.NewClient(ctx)
 	if err != nil {

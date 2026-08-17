@@ -25,6 +25,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 )
@@ -49,10 +50,7 @@ func (m *scriptedMock) Next() (x, y int) {
 func main() {
 	ctx := context.Background()
 
-	policyData, err := os.ReadFile("verified_reasoning/constraints.dl")
-	if err != nil {
-		log.Fatal(err)
-	}
+	policyData := manglekit.MustReadFile("constraints.dl")
 
 	client, err := sdk.NewClient(ctx)
 	if err != nil {
@@ -129,4 +127,3 @@ func main() {
 	}
 	os.Exit(1)
 }
-

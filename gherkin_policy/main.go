@@ -16,8 +16,8 @@ import (
 	"log"
 	"os"
 
+	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk"
 )
 
 type case_ struct {
@@ -33,15 +33,13 @@ type case_ struct {
 func main() {
 	ctx := context.Background()
 
-	featureContent, err := os.ReadFile("gherkin_policy/data_governance.feature")
-	if err != nil {
-		log.Fatal(err)
-	}
+	// MustReadFile is cwd-independent: a relative path is resolved against
+	// this file's directory when the cwd does not contain it, so the example
+	// runs from the repo root and from its own directory alike.
+	featureContent := manglekit.MustReadFile("data_governance.feature")
 
-	client, err := sdk.NewClient(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// MustNewClient keeps the setup to two lines with typed failure on panic.
+	client := manglekit.MustNewClient(ctx)
 	defer client.Shutdown(ctx)
 
 	fmt.Println("=== Gherkin Policy Demo ===")

@@ -18,6 +18,7 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/multiagent"
+	"github.com/duynguyendang/manglekit/testutil"
 )
 
 func exampleDir() string {
@@ -38,60 +39,8 @@ func (e *researchNodeExecutor) Execute(_ context.Context, node *multiagent.Workf
 	return fmt.Sprintf("[seq=%d] node=%q agent=%q role=%q input=%v", seq, node.ID, agent.ID, node.Agent, input), nil
 }
 
-type inMemorySessionStore struct {
-	instances map[string]*core.WorkflowInstance
-}
-
-func newInMemorySessionStore() *inMemorySessionStore {
-	return &inMemorySessionStore{instances: make(map[string]*core.WorkflowInstance)}
-}
-
-func (s *inMemorySessionStore) Create(_ context.Context, inst *core.WorkflowInstance) error {
-	s.instances[inst.SessionKey()] = inst
-	return nil
-}
-
-func (s *inMemorySessionStore) Get(_ context.Context, key string) (*core.WorkflowInstance, error) {
-	inst, ok := s.instances[key]
-	if !ok {
-		return nil, fmt.Errorf("session not found: %s", key)
-	}
-	return inst, nil
-}
-
-func (s *inMemorySessionStore) Update(_ context.Context, inst *core.WorkflowInstance) error {
-	s.instances[inst.SessionKey()] = inst
-	return nil
-}
-
-func (s *inMemorySessionStore) Delete(_ context.Context, key string) error {
-	delete(s.instances, key)
-	return nil
-}
-
-func (s *inMemorySessionStore) Exists(_ context.Context, key string) bool {
-	_, ok := s.instances[key]
-	return ok
-}
-
-func (s *inMemorySessionStore) List(_ context.Context, sessionID string) ([]*core.WorkflowInstance, error) {
-	var out []*core.WorkflowInstance
-	for _, inst := range s.instances {
-		if inst.SessionID == sessionID {
-			out = append(out, inst)
-		}
-	}
-	return out, nil
-}
-
-func (s *inMemorySessionStore) ClearSession(_ context.Context, sessionID string) error {
-	for k, inst := range s.instances {
-		if inst.SessionID == sessionID {
-			delete(s.instances, k)
-		}
-	}
-	return nil
-}
+// The in-memory workflow session store comes from manglekit/testutil
+// (testutil.NewWorkflowSessionStore) — no hand-rolled copy needed here.
 
 type fixedAgentFinder struct {
 	roleToAgent map[string]string
@@ -164,7 +113,7 @@ func runScenarioC(ctx context.Context, system *multiagent.AgentSystem) {
 	if err != nil {
 		log.Fatalf("C loader: %v", err)
 	}
-	ss := newInMemorySessionStore()
+	ss := testutil.NewWorkflowSessionStore()
 	finder := &fixedAgentFinder{
 		roleToAgent: map[string]string{
 			"researcher": "researcher-a",
