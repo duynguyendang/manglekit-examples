@@ -85,6 +85,7 @@ Observe-Orient-Decide-Act loops with entropic steering and self-correction.
 | **ooda_east_generation** | `RunOODA` (core) / `x/east.RunOODAEAST` with EAST steering, mixed-precision memory, Teacher-Student retry | No | `go run ./ooda_east_generation/` |
 | **ooda_genkit_flow** | OODA loop exposed as Genkit HTTP flows — `DefineFlow`, `DefineStreamingFlow`, `FlowRegistry` | No (mock Brain) | `go run ./ooda_genkit_flow/` |
 | **route_chaining** | `ROUTE` decision outcome, dynamic action chaining, paradox injection, SteerKB | No | `go run ./route_chaining/` |
+| **skill_learning** | Cross-session skill learning: file-backed `ooda.Memory` (auto-Commit learner, Orient-time Recall) + `ports.ReasoningPort` route learning for `SteerKB` — session 2 needs fewer refinements and takes the learned fast path after a simulated restart | No | `go run ./skill_learning/` |
 
 ### 5. Orchestration & Planning
 
@@ -138,6 +139,7 @@ External system integrations, LLM bridges, and production infrastructure.
 | FlowRegistry | `adapters/ai.FlowRegistry` | ooda_genkit_flow |
 | ROUTE decision (dynamic chaining) | `core.DecisionRoute` | route_chaining |
 | Paradox injection | `x/east.ShouldInjectParadox()` | route_chaining |
+| Cross-session skill learning | `ooda.Memory` (`Builder.WithMemory`, auto-Commit in `eastPostAct`) + `ports.ReasoningPort` (`SteerKB`) | skill_learning |
 | MCP integration | `adapters/mcp` | mcp_tool_integration |
 | Genkit middleware | `adapters/ai` | genkit_middleware_showcase, ooda_genkit_flow |
 | Session state recovery | `core.StateProvider` | session_recovery |
