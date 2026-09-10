@@ -7,8 +7,8 @@ import (
 
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
-	"github.com/duynguyendang/manglekit/sdk/ooda"
 	"github.com/duynguyendang/manglekit/x/east"
+	"github.com/duynguyendang/manglekit/x/ooda"
 )
 
 func loadRoutingPolicy(t *testing.T, ctx context.Context, client *sdk.Client) {

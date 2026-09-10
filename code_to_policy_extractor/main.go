@@ -80,10 +80,10 @@ func exampleDir() string {
 
 // PRFile represents a file in a pull request with its imports.
 type PRFile struct {
-	Path        string   `json:"path"`
-	Imports     []string `json:"imports"`
-	AddedLines  int      `json:"added_lines"`
-	DeletedLines int     `json:"deleted_lines"`
+	Path         string   `json:"path"`
+	Imports      []string `json:"imports"`
+	AddedLines   int      `json:"added_lines"`
+	DeletedLines int      `json:"deleted_lines"`
 }
 
 // PullRequest represents a PR with multiple files.

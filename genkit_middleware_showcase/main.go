@@ -21,7 +21,7 @@ import (
 // retry middleware re-invokes Generate until it succeeds (or exhausts
 // retries). It does NOT call any network — see TestNoKeyRetryPath.
 type countingGenerator struct {
-	calls   int
+	calls    int
 	failNext int // number of leading calls that should fail
 }
 

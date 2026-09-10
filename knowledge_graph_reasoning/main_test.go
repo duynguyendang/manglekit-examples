@@ -135,45 +135,45 @@ func TestTeamAccessControl(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name       string
-		user       string
-		doc        string
+		name         string
+		user         string
+		doc          string
 		expectAccess bool
 	}{
 		{
-			name:       "alice can access spec_alpha via team_platform",
-			user:       "alice",
-			doc:        "spec_alpha",
+			name:         "alice can access spec_alpha via team_platform",
+			user:         "alice",
+			doc:          "spec_alpha",
 			expectAccess: true,
 		},
 		{
-			name:       "bob can access spec_alpha via team_platform",
-			user:       "bob",
-			doc:        "spec_alpha",
+			name:         "bob can access spec_alpha via team_platform",
+			user:         "bob",
+			doc:          "spec_alpha",
 			expectAccess: true,
 		},
 		{
-			name:       "eve cannot access spec_alpha (team_infra, not team_platform)",
-			user:       "eve",
-			doc:        "spec_alpha",
+			name:         "eve cannot access spec_alpha (team_infra, not team_platform)",
+			user:         "eve",
+			doc:          "spec_alpha",
 			expectAccess: false,
 		},
 		{
-			name:       "eve can access spec_beta via team_infra",
-			user:       "eve",
-			doc:        "spec_beta",
+			name:         "eve can access spec_beta via team_infra",
+			user:         "eve",
+			doc:          "spec_beta",
 			expectAccess: true,
 		},
 		{
-			name:       "alice cannot access spec_beta (team_platform, not team_infra)",
-			user:       "alice",
-			doc:        "spec_beta",
+			name:         "alice cannot access spec_beta (team_platform, not team_infra)",
+			user:         "alice",
+			doc:          "spec_beta",
 			expectAccess: false,
 		},
 		{
-			name:       "carol has no team membership, cannot access any doc",
-			user:       "carol",
-			doc:        "spec_alpha",
+			name:         "carol has no team membership, cannot access any doc",
+			user:         "carol",
+			doc:          "spec_alpha",
 			expectAccess: false,
 		},
 	}

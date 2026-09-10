@@ -17,9 +17,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk/ooda"
+	"github.com/duynguyendang/manglekit/x/ooda"
+	oodaflow "github.com/duynguyendang/manglekit/x/oodaflow"
 )
 
 // mockBrain implements ooda.Brain with deterministic output.
@@ -68,13 +68,13 @@ func main() {
 	// =====================================================================
 	fmt.Println("--- Demo 1: OODAFlow.Run() (direct) ---")
 
-	flow := ai.NewOODAFlow(&ai.OODAFlowConfig{
+	flow := oodaflow.NewOODAFlow(&oodaflow.OODAFlowConfig{
 		Brain:      brain,
 		Executor:   executor,
 		MaxRetries: 3,
 	})
 
-	result, err := flow.Run(ctx, &ai.OODAFlowInput{
+	result, err := flow.Run(ctx, &oodaflow.OODAFlowInput{
 		Input:  "Generate a compliance report",
 		Intent: "document_generation",
 	})
@@ -92,13 +92,13 @@ func main() {
 	fmt.Println()
 	fmt.Println("--- Demo 2: FlowRegistry (multiple flows) ---")
 
-	registry := ai.NewFlowRegistry(nil) // nil Genkit = no HTTP registration
+	registry := oodaflow.NewFlowRegistry(nil) // nil Genkit = no HTTP registration
 
-	flowReport := ai.NewOODAFlow(&ai.OODAFlowConfig{
+	flowReport := oodaflow.NewOODAFlow(&oodaflow.OODAFlowConfig{
 		Brain:    brain,
 		Executor: executor,
 	})
-	flowSummary := ai.NewOODAFlow(&ai.OODAFlowConfig{
+	flowSummary := oodaflow.NewOODAFlow(&oodaflow.OODAFlowConfig{
 		Brain:    brain,
 		Executor: executor,
 	})
@@ -108,7 +108,7 @@ func main() {
 
 	fmt.Printf("  Registered flows: report_generation, summary_generation\n")
 
-	result, err = registry.Run(ctx, "report_generation", &ai.OODAFlowInput{
+	result, err = registry.Run(ctx, "report_generation", &oodaflow.OODAFlowInput{
 		Input: "Quarterly financial report",
 	})
 	if err != nil {
@@ -117,7 +117,7 @@ func main() {
 		fmt.Printf("  report_generation: status=%s output=%s\n", result.Status, result.Output)
 	}
 
-	result, err = registry.Run(ctx, "summary_generation", &ai.OODAFlowInput{
+	result, err = registry.Run(ctx, "summary_generation", &oodaflow.OODAFlowInput{
 		Input: "Executive summary of Q4 results",
 	})
 	if err != nil {

@@ -29,7 +29,7 @@ type ClassifyRequest struct {
 
 // ClassifyResponse is the typed output.
 type ClassifyResponse struct {
-	Category string `mangle:"category"`
+	Category   string  `mangle:"category"`
 	Confidence float64 `mangle:"confidence"`
 }
 

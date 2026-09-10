@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit/sdk"
-	"github.com/duynguyendang/manglekit/sdk/ooda"
+	"github.com/duynguyendang/manglekit/x/ooda"
 )
 
 func TestOODALoopConvergesOnCompliantDoc(t *testing.T) {

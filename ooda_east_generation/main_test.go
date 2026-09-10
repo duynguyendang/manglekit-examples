@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk/ooda"
 	"github.com/duynguyendang/manglekit/x/east"
+	"github.com/duynguyendang/manglekit/x/ooda"
 )
 
 func TestRunOODA_Success(t *testing.T) {

@@ -29,9 +29,9 @@ import (
 // Transaction represents the data model for the policy copilot.
 // Field tags teach the LLM which predicates are available.
 type Transaction struct {
-	Amount   float64 `mangle:"amount"`
-	Region   string  `mangle:"region"`
-	Category string  `mangle:"category"`
+	Amount    float64 `mangle:"amount"`
+	Region    string  `mangle:"region"`
+	Category  string  `mangle:"category"`
 	RiskScore float64 `mangle:"risk_score"`
 }
 

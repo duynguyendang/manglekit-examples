@@ -35,8 +35,8 @@ import (
 	"sync"
 
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk/ooda"
 	"github.com/duynguyendang/manglekit/x/east"
+	"github.com/duynguyendang/manglekit/x/ooda"
 	"github.com/google/uuid"
 )
 

@@ -255,7 +255,6 @@ func runSupervisedIntegration(ctx context.Context, client *sdk.Client, provider 
 	fmt.Println()
 }
 
-
 // MockAction logs execution and returns success. Used in the supervised
 // integration pass to prove the SDK's run loop writes state to the provider.
 type MockAction struct {

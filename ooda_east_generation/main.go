@@ -1,5 +1,5 @@
 // ooda_east_generation demonstrates the OODA v4 EAST engine
-// (`manglekit/sdk/ooda/`):
+// (`manglekit/x/ooda/`):
 //   - RunOODA: deterministic tool flow (no EAST)
 //   - RunOODAEAST: generation flow with EAST steering
 //   - PinAxiom / AddContext / ShaveContext: mixed-precision memory
@@ -15,8 +15,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/duynguyendang/manglekit/core"
-	"github.com/duynguyendang/manglekit/sdk/ooda"
 	"github.com/duynguyendang/manglekit/x/east"
+	"github.com/duynguyendang/manglekit/x/ooda"
 )
 
 // =========================================================================

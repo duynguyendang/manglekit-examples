@@ -130,12 +130,12 @@ External system integrations, LLM bridges, and production infrastructure.
 | EvaluateSteering | `Engine().EvaluateSteering()` | hybrid_rag, route_chaining |
 | Security / taint labels | `core.Envelope.SecurityLabels` | jailbreak_proof_agent, hybrid_rag |
 | Policy violation detection | `core.IsPolicyViolationError()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning |
-| OODA cognitive loop (5-phase) | `sdk/ooda` | ooda_document_generator |
-| RunOODA / RunOODAEAST | `sdk/ooda` (`RunOODA`), `x/east` (`RunOODAEAST`) | ooda_east_generation |
+| OODA cognitive loop (5-phase) | `x/ooda` | ooda_document_generator |
+| RunOODA / RunOODAEAST | `x/ooda` (`RunOODA`), `x/east` (`RunOODAEAST`) | ooda_east_generation |
 | EAST steering (entropy/saliency) | `x/east` | ooda_east_generation, route_chaining |
 | Mixed-precision memory | `ooda.PinAxiom` / `AddContext` / `ShaveContext` | ooda_east_generation |
 | Tool registry & dispatcher | `ooda.Registry` / `ooda.Dispatcher` | ooda_east_generation, ooda_document_generator |
-| OODA as Genkit flow | `adapters/ai.OODAFlow` | ooda_genkit_flow |
+| OODA as Genkit flow | `x/oodaflow` (package `oodaflow`) | ooda_genkit_flow |
 | FlowRegistry | `adapters/ai.FlowRegistry` | ooda_genkit_flow |
 | ROUTE decision (dynamic chaining) | `core.DecisionRoute` | route_chaining |
 | Paradox injection | `x/east.ShouldInjectParadox()` | route_chaining |
@@ -191,7 +191,7 @@ These examples pin the **current** architecture behavior:
 - **`ooda.NewLoop` (used by ooda_document_generator) is experimental** (ROADMAP §P3); the
   canonical entry points are `ooda.NewBuilder()...Build()` + `ooda.RunOODA` and
   `x/east.RunOODAEAST`. Since v0.8 the EAST (OODA v4) path lives in the optional
-  `x/east` extension — the deterministic `sdk/ooda` core stays dependency-free of it.
+  `x/east` extension — the deterministic `x/ooda` chassis stays dependency-free of it.
 
 - **`client.Execute` is steering-gated** (errors unless `WithSteeringEnabled`). Examples
   prefer `ExecuteByName`/`generator.Generate`.

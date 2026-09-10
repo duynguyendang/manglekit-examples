@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/duynguyendang/manglekit/sdk/ooda"
+	"github.com/duynguyendang/manglekit/x/ooda"
 )
 
 func TestSkillLearningAcrossSessions(t *testing.T) {

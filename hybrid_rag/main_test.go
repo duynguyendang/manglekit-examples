@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	function "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit"
+	function "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/adapters/knowledge"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
