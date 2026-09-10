@@ -86,6 +86,7 @@ Observe-Orient-Decide-Act loops with entropic steering and self-correction.
 | **ooda_genkit_flow** | OODA loop exposed as Genkit HTTP flows — `DefineFlow`, `DefineStreamingFlow`, `FlowRegistry` | No (mock Brain) | `go run ./ooda_genkit_flow/` |
 | **route_chaining** | `ROUTE` decision outcome, dynamic action chaining, paradox injection, SteerKB | No | `go run ./route_chaining/` |
 | **skill_learning** | Cross-session skill learning: file-backed `ooda.Memory` (auto-Commit learner, Orient-time Recall) + `ports.ReasoningPort` route learning for `SteerKB` — session 2 needs fewer refinements and takes the learned fast path after a simulated restart | No | `go run ./skill_learning/` |
+| **learn_from_code** | UC-L8 "learn from code" skill: deterministic intent router (LEARN/EVAL/PROMOTE/STATUS) — code → signals → induced `x/genes` candidates (advisory T2/T3 only, signed, provenanced), shadow EVAL through the real gate, human-confirmed PROMOTE to T1 that then DENIES (`docs/use-cases/learning.md`) | No | `go run ./learn_from_code/` |
 
 ### 5. Orchestration & Planning
 
@@ -140,6 +141,7 @@ External system integrations, LLM bridges, and production infrastructure.
 | ROUTE decision (dynamic chaining) | `core.DecisionRoute` | route_chaining |
 | Paradox injection | `x/east.ShouldInjectParadox()` | route_chaining |
 | Cross-session skill learning | `ooda.Memory` (`Builder.WithMemory`, auto-Commit in `eastPostAct`) + `ports.ReasoningPort` (`SteerKB`) | skill_learning |
+| Learn-from-code skill (UC-L8): intent router + `x/genes` induction/promotion | `x/genes` (`Gene`/`Pool`/`Compile`/`ApplyTo`), `sdk.Client` supervised EVAL | learn_from_code |
 | MCP integration | `adapters/mcp` | mcp_tool_integration |
 | Genkit middleware | `adapters/ai` | genkit_middleware_showcase, ooda_genkit_flow |
 | Session state recovery | `core.StateProvider` | session_recovery |
@@ -172,12 +174,14 @@ These examples pin the **current** architecture behavior:
 - **Supervisor pre-check is the trustworthy gate.** Every `Supervise` + `ExecuteByName` example
   relies on the pre-check (VerifyAtoms) for enforcement.
 
-- **Post-check (Reflect) enforces detected violations but is fail-open on verifier errors.**
-  The post-check at `internal/supervisor/action.go:140` returns `PolicyViolationError` when
-  `!res.Pass`, but skips enforcement if `VerifyAtoms` itself returns an error (`err != nil`
-  guard). This matches the "closed by default" design — the kernel blocks on hard
-  violations (T0/T1) before and after execution, but defers to the caller on internal
-  verifier failures.
+- **Post-check (Reflect) is fail-closed since ADR-001** — it matches the
+  pre-check gate. A verifier/engine error blocks the result with
+  `core.SupervisorError` (no silent pass-through); a detected violation at
+  T0/T1 blocks with `core.PolicyViolationError`; explicitly tier-tagged
+  T2/T3 violations are advisory (logged `Warn`, not blocking). See the
+  workspace docs `docs/context/governance/enforcement-contract.md` (the
+  authoritative contract) and `manglekit/internal/supervisor/action.go`
+  pre-flight `:64-79` / post-flight `:128-152`.
 
 - **Fail-closed is the only mode (v0.6).** `WithFailMode` was removed: the
   pre-check gate always fails closed, and text-extraction failures block
