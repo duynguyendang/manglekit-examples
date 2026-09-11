@@ -183,17 +183,67 @@ func TestAmbiguousInputShadowEval(t *testing.T) {
 	}
 }
 
-func TestLearnFailClosed(t *testing.T) {
-	cfg, err := parseFlags([]string{"--learn", "./testdata/clean.go", "--out", t.TempDir()})
+// Clean tree: an honest no-op (message, nothing written, exit 0).
+func TestLearnCleanTreeIsQuietNoop(t *testing.T) {
+	dir := t.TempDir()
+	out := runCLI(t, "--learn", "./testdata/clean.go", "--out", dir)
+	if !strings.Contains(out, "pool unchanged") {
+		t.Fatalf("expected no-op message, got:\n%s", out)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, poolFile)); !os.IsNotExist(statErr) {
+		t.Fatal("pool must not be written when there is nothing to learn")
+	}
+}
+
+// Zero .go files at all: fail closed with an error.
+func TestLearnNoGoFilesFailsClosed(t *testing.T) {
+	empty := t.TempDir()
+	cfg, err := parseFlags([]string{"--learn", empty, "--out", t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = run(context.Background(), &bytes.Buffer{}, cfg)
-	if err == nil || !strings.Contains(err.Error(), "nothing written") {
-		t.Fatalf("expected fail-closed error, got %v", err)
+	runErr := run(context.Background(), &bytes.Buffer{}, cfg)
+	if runErr == nil || !strings.Contains(runErr.Error(), "nothing written") {
+		t.Fatalf("expected fail-closed error for empty tree, got %v", runErr)
 	}
-	if _, statErr := os.Stat(filepath.Join(cfg.poolDir, poolFile)); !os.IsNotExist(statErr) {
-		t.Fatal("pool file must not exist after failed learn")
+}
+
+// Default scope: --learn with no path = tree walk of cwd (temp tree made
+// of nested packages, via explicit dir to keep the test cwd-independent…
+// plus the bare-flag routing check).
+func TestLearnTreeDefaultAndDirScan(t *testing.T) {
+	// bare --learn parses and routes to LEARN (cwd tree default)
+	cfg, err := parseFlags([]string{"--learn"})
+	if err != nil {
+		t.Fatalf("bare --learn must parse: %v", err)
+	}
+	if d := classify(cfg); d.Primary != ModeLearn {
+		t.Fatalf("bare --learn routes to %s, want LEARN", d.Primary)
+	}
+	// directory scan finds nested signal files (fixture tree in tmp)
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal", "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	draft := "package pkg\n\nimport (\n\t\"os/exec\"\n)\n\nfunc PurgeCache() error { return exec.Command(\"sync\").Run() }\n"
+	if err := os.WriteFile(filepath.Join(root, "internal", "pkg", "bad.go"), []byte(draft), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// decoys that must NOT count (tests + testdata + vendor)
+	os.WriteFile(filepath.Join(root, "internal", "pkg", "bad_test.go"), []byte(draft), 0o600)
+	os.MkdirAll(filepath.Join(root, "testdata"), 0o755)
+	os.WriteFile(filepath.Join(root, "testdata", "fake.go"), []byte(draft), 0o600)
+
+	dir := t.TempDir()
+	out := runCLI(t, "--learn", root, "--out", dir)
+	if !strings.Contains(out, "scanning 1 .go file(s)") {
+		t.Fatalf("walk must see exactly the non-excluded file:\n%s", out)
+	}
+	if !strings.Contains(out, "exec_import") || !strings.Contains(out, "destructive_call") {
+		t.Fatalf("nested signals missed:\n%s", out)
+	}
+	if !strings.Contains(out, "2 signal") || !strings.Contains(out, "lc-") {
+		t.Fatalf("composite lesson expected:\n%s", out)
 	}
 }
 

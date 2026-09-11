@@ -6,7 +6,7 @@
 //	intent router   deterministic flag/signal classification (LEARN | EVAL |
 //	                PROMOTE | STATUS; ambiguous → LEARN first, shadow EVAL;
 //	                the chosen mode is always printed as `intent=...`)
-//	LEARN           code → deterministic signal extraction → template
+//	LEARN           source tree → deterministic signal extraction → template
 //	                induction → signed x/genes candidates at advisory tiers
 //	                ONLY (T2 composite / T3 per-signal), written to a pool
 //	                YAML with Source provenance. Never WithAllowHardTiers.
@@ -24,7 +24,8 @@
 //
 // Try it:
 //
-//	go run ./learn_from_code --learn ./testdata/snippet.go
+//	go run ./learn_from_code --learn ../../manglekit          # whole source tree
+//	go run ./learn_from_code --learn                          # tree = cwd
 //	go run ./learn_from_code --status
 //	go run ./learn_from_code --eval --input ./testdata/snippet.go
 //	go run ./learn_from_code --promote --gene lc-<sha8>-review --confirm
@@ -116,17 +117,29 @@ func run(ctx context.Context, out io.Writer, cfg *config) error {
 // the pool file. Fails closed: any extraction/compile error leaves the pool
 // untouched (genes are written only after full validation).
 func runLearn(ctx context.Context, out io.Writer, cfg *config) ([]genes.Gene, error) {
-	if len(cfg.learn) == 0 {
-		return nil, fmt.Errorf("LEARN needs at least one --learn <path.go>")
+	if !cfg.learnSeen && len(cfg.learn) == 0 {
+		return nil, fmt.Errorf("LEARN not requested (internal routing error)")
 	}
-	ex, err := extractSignals(cfg.learn)
+	roots := cfg.learn
+	if len(roots) == 0 {
+		roots = []string{"."}
+	}
+	files, err := resolveLearnPaths(cfg.learn)
+	if err != nil {
+		return nil, fmt.Errorf("LEARN failed closed (nothing written): %w", err)
+	}
+	fmt.Fprintf(out, "scanning %d .go file(s) under %s (excluded: tests, testdata, vendor, .git)\n",
+		len(files), strings.Join(roots, " "))
+	ex, err := extractSignals(files)
 	if err != nil {
 		return nil, fmt.Errorf("extraction failed (nothing written): %w", err)
 	}
 	if len(ex.Keys) == 0 {
-		return nil, fmt.Errorf("no learnable signals found in %v (nothing written)", cfg.learn)
+		// A clean tree is an HONEST answer, not a failure: nothing to write.
+		fmt.Fprintf(out, "no learnable signals in %d file(s) — pool unchanged\n", len(files))
+		return nil, nil
 	}
-	fmt.Fprintf(out, "extracted %d signal(s) from %d file(s) [%s]: %s\n",
+	fmt.Fprintf(out, "extracted %d signal(s) from %d signal-bearing file(s) [%s]: %s\n",
 		len(ex.Keys), len(ex.Files), ex.SHAC8(), strings.Join(ex.Keys, ", "))
 
 	candidates := induceGenes(ex)

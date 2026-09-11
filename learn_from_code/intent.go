@@ -17,16 +17,17 @@ const (
 
 // config is the fully-parsed command line.
 type config struct {
-	learn   []string // code paths for LEARN
-	eval    bool     // --eval
-	input   string   // --input <file.go> (re-extract signals at EVAL)
-	signals []string // --signals a,b,c
-	promote bool     // --promote
-	gene    string   // --gene <name>
-	confirm bool     // --confirm (human review acknowledgment)
-	status  bool     // --status
-	pool    string   // --pool <file.yaml> override
-	poolDir string   // --out <dir>, default ./learned-pool
+	learn     []string // code paths for LEARN (files and/or dirs)
+	learnSeen bool     // --learn passed, even with no paths (= cwd tree)
+	eval      bool     // --eval
+	input     string   // --input <file.go> (re-extract signals at EVAL)
+	signals   []string // --signals a,b,c
+	promote   bool     // --promote
+	gene      string   // --gene <name>
+	confirm   bool     // --confirm (human review acknowledgment)
+	status    bool     // --status
+	pool      string   // --pool <file.yaml> override
+	poolDir   string   // --out <dir>, default ./learned-pool
 }
 
 // classify is the deterministic intent router. Rules (docs/use-cases/learning
@@ -49,7 +50,7 @@ func classify(cfg *config) struct {
 		ShadowEval bool
 		Reason     string
 	}
-	hasCode := len(cfg.learn) > 0
+	hasCode := cfg.learnSeen || len(cfg.learn) > 0
 	hasEvalIntent := cfg.eval || cfg.input != "" || len(cfg.signals) > 0
 
 	switch {
@@ -60,9 +61,9 @@ func classify(cfg *config) struct {
 	case cfg.promote:
 		return d{ModePromote, false, "explicit --promote (human-gated)"}
 	case hasCode && hasEvalIntent:
-		return d{ModeLearn, true, "ambiguous (code + eval intent): LEARN first, shadow EVAL on the candidate, nothing auto-applied"}
+		return d{ModeLearn, true, "ambiguous (code + eval intent): LEARN the tree first, shadow EVAL on the candidate, nothing auto-applied"}
 	case hasCode:
-		return d{ModeLearn, false, "code input present"}
+		return d{ModeLearn, false, "code tree/file input present"}
 	default:
 		return d{ModeEval, false, "eval intent without code input"}
 	}
@@ -85,11 +86,9 @@ func parseFlags(args []string) (*config, error) {
 		args = args[1:]
 		switch a {
 		case "--learn", "-l":
-			p := consumePaths()
-			if len(p) == 0 {
-				return nil, fmt.Errorf("%s needs at least one path", a)
-			}
-			cfg.learn = append(cfg.learn, p...)
+			// No paths = the tree you are in (default whole-source LEARN).
+			cfg.learnSeen = true
+			cfg.learn = append(cfg.learn, consumePaths()...)
 		case "--eval", "-e":
 			cfg.eval = true
 		case "--input":

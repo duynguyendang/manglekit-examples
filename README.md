@@ -86,7 +86,7 @@ Observe-Orient-Decide-Act loops with entropic steering and self-correction.
 | **ooda_genkit_flow** | OODA loop exposed as Genkit HTTP flows — `DefineFlow`, `DefineStreamingFlow`, `FlowRegistry` | No (mock Brain) | `go run ./ooda_genkit_flow/` |
 | **route_chaining** | `ROUTE` decision outcome, dynamic action chaining, paradox injection, SteerKB | No | `go run ./route_chaining/` |
 | **skill_learning** | Cross-session skill learning: file-backed `ooda.Memory` (auto-Commit learner, Orient-time Recall) + `ports.ReasoningPort` route learning for `SteerKB` — session 2 needs fewer refinements and takes the learned fast path after a simulated restart | No | `go run ./skill_learning/` |
-| **learn_from_code** | UC-L8 "learn from code" skill: deterministic intent router (LEARN/EVAL/PROMOTE/STATUS) — code → signals → induced `x/genes` candidates (advisory T2/T3 only, signed, provenanced), shadow EVAL through the real gate, human-confirmed PROMOTE to T1 that then DENIES (`docs/use-cases/learning.md`) | No | `go run ./learn_from_code/` |
+| **learn_from_code** | UC-L8 "learn from code" skill: deterministic intent router (LEARN/EVAL/PROMOTE/STATUS) — source tree → signals → induced `x/genes` candidates (advisory T2/T3 only, signed, provenanced), shadow EVAL through the real gate, human-confirmed PROMOTE to T1 that then DENIES (`docs/use-cases/learning.md`) | No | `go run ./learn_from_code/` |
 
 ### 5. Orchestration & Planning
 

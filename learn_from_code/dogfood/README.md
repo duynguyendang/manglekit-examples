@@ -16,10 +16,12 @@ go run . --status --out dogfood      # what the kernel currently teaches
 go run . --eval --signals destructive_call --out dogfood   # how the gate would react
 ```
 
-Determinism: extraction keys and the candidate SHA depend **only on
-signal-bearing files** (sorted, content-hashed), so unrelated edits never
-churn the pool. Exclusions: `*_test.go`, `testdata/`, `.git` (test fixtures
-intentionally contain fake secrets; the scanned set is the shipped code).
+Determinism: the CLI itself walks the tree (`--learn <dir>`), and extraction
+keys plus the candidate SHA depend **only on signal-bearing files** (sorted,
+content-hashed), so unrelated edits never churn the pool. Walk exclusions:
+`*_test.go`, `testdata/`, `vendor/`, dot-dirs — fixtures intentionally
+contain fake secrets; the scanned set is the shipped code. `regenerate.sh`
+is a thin wrapper over the CLI (no duplicate find logic; portable).
 
 ## Reviewed findings (2026-09-11, sha 6b499c8f)
 

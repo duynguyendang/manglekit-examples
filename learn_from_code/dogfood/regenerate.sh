@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 # Regenerate the reviewed candidate pool from the manglekit kernel sources.
 # The pool (dogfood/genes.yaml) is a REVIEWED ARTIFACT: it is the committed
-# record of "which code-hygiene lessons the kernel's current signals induce".
-# Deterministic: extraction keys + SHA identity depend only on signal-bearing
-# files (sorted), so unrelated edits never churn it.
+# record of "which code-hygiene lessons the kernel's current sources induce".
+# Since the full-tree-learn plan (2026-09-11) the CLI itself walks the tree
+# deterministically (exclusions: *_test.go, testdata/, vendor/, dot-dirs),
+# so this script is a thin wrapper — no duplicate find logic, portable.
+#
+# Usage: regenerate.sh [KERNEL_DIR] [OUT_DIR]
+#   defaults: ../../manglekit  ./dogfood   (sibling mangle-project layout)
 set -euo pipefail
 cd "$(dirname "$0")/.."
-KERNEL_DIR="${1:-../../manglekit}"
-OUT_DIR="${2:-dogfood}"
-mapfile -t FILES < <(find "$KERNEL_DIR" -name '*.go' \
-    ! -name '*_test.go' ! -path '*/testdata/*' ! -path '*/.git/*' | sort)
-if [ "${#FILES[@]}" -eq 0 ]; then
-    echo "no sources found under $KERNEL_DIR" >&2; exit 1
-fi
-go run . --learn "${FILES[@]}" --out "$OUT_DIR"
+go run . --learn "${1:-../../manglekit}" --out "${2:-dogfood}"
