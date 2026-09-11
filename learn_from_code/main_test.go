@@ -202,3 +202,40 @@ func TestUnknownFlagRejected(t *testing.T) {
 		t.Fatal("unknown flag must fail closed")
 	}
 }
+
+func TestExtractMethodFormDestructive(t *testing.T) {
+	ex, err := extractSignals([]string{"./testdata/destructive_methods.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ex.Keys) != 1 || ex.Keys[0] != "destructive_call" {
+		t.Fatalf("method-form receivers must be detected, got %v", ex.Keys)
+	}
+}
+
+func TestExtractIdentityScopedToSignalFiles(t *testing.T) {
+	withClean, err := extractSignals([]string{"./testdata/clean.go", snippet})
+	if err != nil {
+		t.Fatal(err)
+	}
+	only, err := extractSignals([]string{snippet})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(withClean.Files, ",") != "./testdata/snippet.go" {
+		t.Errorf("Files must list only signal-bearing files, got %v", withClean.Files)
+	}
+	if withClean.SHAC8() != only.SHAC8() {
+		t.Error("candidate identity must not churn on unrelated clean files")
+	}
+}
+
+func TestExtractSingleImportForm(t *testing.T) {
+	ex, err := extractSignals([]string{"./testdata/single_import.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ex.Keys) != 1 || ex.Keys[0] != "exec_import" {
+		t.Fatalf("single-form import must be detected, got %v", ex.Keys)
+	}
+}

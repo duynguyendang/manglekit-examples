@@ -34,10 +34,10 @@ type signalDef struct {
 // dependency. LLM-assisted extraction (adapters/extractor) is the documented
 // upgrade path behind the same keys (docs/use-cases/learning.md UC-L8).
 var signalDefs = []signalDef{
-	{"exec_import", regexp.MustCompile(`(?m)^\s*_?\s*"os/exec"`)},
-	{"direct_db_access", regexp.MustCompile(`(?m)^\s*_?\s*"database/sql"`)},
+	{"exec_import", regexp.MustCompile(`(?m)^\s*(import\s+)?_?\s*"os/exec"`)},
+	{"direct_db_access", regexp.MustCompile(`(?m)^\s*(import\s+)?_?\s*"database/sql"`)},
 	{"hardcoded_secret", regexp.MustCompile(`(?i)(password|secret|token|api_?key)\s*(:=|:|=)\s*"[^"\s]{8,}"`)},
-	{"destructive_call", regexp.MustCompile(`(?i)\bfunc\s+\w*(delete|drop|truncate|purge|erase)\w*\s*\(`)},
+	{"destructive_call", regexp.MustCompile(`(?i)\bfunc(\s*\([^)]*\))?\s+\w*(delete|drop|truncate|purge|erase)\w*\s*\(`)},
 }
 
 // SignalMessage maps an extracted signal to its advisory halt text.
@@ -68,23 +68,35 @@ func extractSignals(paths []string) (extracted, error) {
 	var keys []string
 	var h = sha256.New()
 
+	matched := map[string]bool{}
 	for _, p := range paths {
 		src, err := os.ReadFile(p)
 		if err != nil {
 			return extracted{}, fmt.Errorf("read %s: %w", p, err)
 		}
-		fmt.Fprintf(h, "file:%s\n", p)
 		text := string(src)
-		fmt.Fprintf(h, "content:%x\n", sha256.Sum256(src))
+		hit := false
 		for _, def := range signalDefs {
-			if def.regex.MatchString(text) && !seen[def.key] {
-				seen[def.key] = true
-				keys = append(keys, def.key)
+			if def.regex.MatchString(text) {
+				hit = true
+				if !seen[def.key] {
+					seen[def.key] = true
+					keys = append(keys, def.key)
+				}
 			}
+		}
+		if hit {
+			matched[p] = true
+			fmt.Fprintf(h, "file:%s\ncontent:%x\n", p, sha256.Sum256(src))
 		}
 	}
 	sort.Strings(keys)
-	return extracted{Files: append([]string(nil), paths...), Keys: keys, hash: hex.EncodeToString(h.Sum(nil))}, nil
+	var files []string
+	for f := range matched {
+		files = append(files, f)
+	}
+	sort.Strings(files)
+	return extracted{Files: files, Keys: keys, hash: hex.EncodeToString(h.Sum(nil))}, nil
 }
 
 // bySeverity sorts keys most-severity-first, deterministic tie-break.
