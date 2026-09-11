@@ -239,3 +239,24 @@ func TestExtractSingleImportForm(t *testing.T) {
 		t.Fatalf("single-form import must be detected, got %v", ex.Keys)
 	}
 }
+
+func TestAskFlowCleanDraftAndAdvisoryVisible(t *testing.T) {
+	dir := t.TempDir()
+	// clean draft: ALLOW, exit 0 — the agent's happy path
+	out := runCLI(t, "--eval", "--input", "./testdata/clean.go", "--out", dir)
+	// (pool is empty in a fresh dir; clean.go has no signals → early ALLOW)
+	if !strings.Contains(out, "verdict: ALLOW") || !strings.Contains(out, "no known code signal") {
+		t.Fatalf("clean draft must ALLOW quietly, got:\n%s", out)
+	}
+
+	// learn a lesson from the method-form fixture, then ASK with the same file:
+	// ALLOW (advisory never blocks) but the fired lesson must be VISIBLE.
+	runCLI(t, "--learn", "./testdata/destructive_methods.go", "--out", dir)
+	out = runCLI(t, "--eval", "--input", "./testdata/destructive_methods.go", "--out", dir)
+	if !strings.Contains(out, "verdict: ALLOW") {
+		t.Fatalf("advisory lesson must not block caller:\n%s", out)
+	}
+	if !strings.Contains(out, "advisory lesson fired: tier=T3") {
+		t.Fatalf("asked draft tripped a lesson but it is not surfaced:\n%s", out)
+	}
+}

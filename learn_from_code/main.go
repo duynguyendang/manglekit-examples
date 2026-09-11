@@ -174,6 +174,21 @@ func runLearn(ctx context.Context, out io.Writer, cfg *config) ([]genes.Gene, er
 // unless --confirm is passed (human-review opt-in, same discipline as
 // x/genes.WithAllowHardTiers).
 func runEval(ctx context.Context, out io.Writer, cfg *config, extra ...genes.Gene) error {
+	// Signals to assess: re-extract from --input, or take --signals csv.
+	// A clean draft is the happy path of ASK and needs no pool at all.
+	keys, err := evalSignals(cfg)
+	if err != nil {
+		return err
+	}
+	if len(keys) == 0 {
+		if cfg.input != "" || len(cfg.signals) > 0 {
+			fmt.Fprintln(out, "verdict: ALLOW (draft trips no known code signal — nothing for the learned material to say)")
+			return nil
+		}
+		return fmt.Errorf("nothing to evaluate (pass --input <file.go> or --signals a,b)")
+	}
+	fmt.Fprintf(out, "assessing %d signal(s): %s\n", len(keys), strings.Join(keys, ", "))
+
 	poolPath := cfg.pool
 	if poolPath == "" {
 		poolPath = filepath.Join(cfg.poolDir, poolFile)
@@ -199,16 +214,6 @@ func runEval(ctx context.Context, out io.Writer, cfg *config, extra ...genes.Gen
 	if len(applied) == 0 {
 		return fmt.Errorf("no advisory genes in %s — run --learn first", poolPath)
 	}
-
-	// Signals to assess: re-extract from --input, or take --signals csv.
-	keys, err := evalSignals(cfg)
-	if err != nil {
-		return err
-	}
-	if len(keys) == 0 {
-		return fmt.Errorf("no signals to evaluate (pass --input <file.go> or --signals a,b)")
-	}
-	fmt.Fprintf(out, "assessing %d signal(s): %s\n", len(keys), strings.Join(keys, ", "))
 
 	client, err := sdk.NewClient(ctx)
 	if err != nil {
@@ -237,7 +242,18 @@ func runEval(ctx context.Context, out io.Writer, cfg *config, extra ...genes.Gen
 	_, execErr := client.ExecuteByName(ctx, gateAction, env)
 	switch {
 	case execErr == nil:
-		fmt.Fprintln(out, "verdict: ALLOW (no blocking-tier violation — advisory T2/T3 halts are logged by the gate, not surfaced to callers)")
+		fmt.Fprintln(out, "verdict: ALLOW (no blocking-tier violation)")
+		// The gate swallows advisory halts by design (they must not block
+		// callers) — but an agent ASKING deserves to know WHICH lessons
+		// its draft tripped. Surface them via a direct engine Assess,
+		// which reports every halt tier.
+		if assessErr := client.Engine().Assess(ctx, core.ActionMetadata{Name: gateAction}, env); assessErr != nil {
+			var align *core.AlignmentError
+			if errors.As(assessErr, &align) {
+				fmt.Fprintf(out, "advisory lesson fired: tier=%s reason=%q\n", align.Tier, align.Message)
+				fmt.Fprintln(out, "→ check --status provenance: change the draft or be ready to justify it in the PR")
+			}
+		}
 		return nil
 	case core.IsPolicyViolationError(execErr):
 		fmt.Fprintf(out, "verdict: DENY — %v\n", execErr)
