@@ -10,6 +10,7 @@ import (
 	"github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/duynguyendang/manglekit/testutil"
 	genkitai "github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/plugins/middleware"
 )
@@ -229,8 +230,104 @@ func runLiveMode(ctx context.Context) {
 	}
 }
 
+// streamingPolicy gates the streaming demo: a hard T1 pre-check deny, and a
+// post-check rule over the OUTPUT entity that refuses to auto-trust assembled
+// LLM text for the "stream_review" action.
+//
+// Note the asymmetry this encodes (verified engine behavior): the raw
+// PolicyEngine.Reflect path does NOT inject an action_operation("Output",…)
+// fact — only the SDK-supervised path does. So OUTPUT-entity rules key on the
+// output envelope's own meta facts, which StreamingSupervisedAction sets
+// (model_type, action_name).
+const streamingPolicy = `
+halt("Req", "streaming about passwords is denied before the first chunk", "T1") :-
+    action_operation("Req", "stream_answer"),
+    meta("topic", "passwords").
+
+halt("Output", "reviewed streams require human sign-off before being marked final", "T1") :-
+    meta("model_type", "llm"),
+    meta("action_name", "stream_review").
+`
+
+// streamTo collects chunk texts + any terminal error from a supervised stream.
+func streamTo(ctx context.Context, ch <-chan core.StreamChunk) (text string, termErr error) {
+	for c := range ch {
+		if c.Err != nil {
+			return text, c.Err
+		}
+		text += c.Text
+	}
+	return text, nil
+}
+
+// demoStreamingSupervision shows the pre-first-chunk deny and the
+// post-check on the assembled response — the two moments a streaming LLM is
+// dangerous, both covered by adapters/ai.NewStreamingSupervisedAction.
+func demoStreamingSupervision(ctx context.Context) error {
+	fmt.Println("--- Supervised streaming (adapters/ai.NewStreamingSupervisedAction) ---")
+
+	client, err := sdk.NewClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client.Shutdown(ctx) }()
+	if err := client.LoadPolicy(ctx, streamingPolicy); err != nil {
+		return err
+	}
+
+	// Deterministic streaming mock; its Calls() counter is the PROOF that a
+	// denied request never opened the provider.
+	gen := testutil.NewMockLLM("Sourdough is a fermented dough. ")
+	answer, err := ai.NewStreamingSupervisedAction("stream_answer", gen, client.Engine())
+	if err != nil {
+		return err
+	}
+	client.RegisterAction("stream_answer", answer)
+
+	// Case 1: denied BEFORE the first chunk — provider never called.
+	denied := core.Envelope{Payload: "Explain passwords policy"}
+	denied.Metadata = map[string]any{"topic": "passwords"}
+	before := gen.Calls()
+	ch, err := answer.Stream(ctx, denied)
+	fmt.Printf("  deny case:  stream opened=%v (err: %v)\n", ch != nil, err != nil)
+	fmt.Printf("  provider calls before/after: %d/%d — zero leaked chunks\n", before, gen.Calls())
+
+	// Case 2: allowed — chunks flow, post-check passes, final is available.
+	ok := core.Envelope{Payload: "Explain sourdough"}
+	ok.Metadata = map[string]any{"topic": "cooking"}
+	ch2, err := answer.Stream(ctx, ok)
+	if err != nil {
+		return err
+	}
+	text, termErr := streamTo(ctx, ch2)
+	final, okFinal := answer.FinalEnvelope()
+	fmt.Printf("  allow case: streamed %q, terminal err=%v, final-envelope=%v (%v)\n",
+		text, termErr, okFinal, final.Payload)
+
+	// Case 3: chunks arrive, but the assembled output is refused by the
+	// OUTPUT-entity rule — caller gets a terminal error chunk, no final.
+	review, err := ai.NewStreamingSupervisedAction("stream_review", gen, client.Engine())
+	if err != nil {
+		return err
+	}
+	ch3, err := review.Stream(ctx, ok)
+	if err != nil {
+		return err
+	}
+	text3, termErr3 := streamTo(ctx, ch3)
+	_, okFinal3 := review.FinalEnvelope()
+	fmt.Printf("  post-check case: streamed %q, terminal err present=%v, final usable=%v\n",
+		text3, termErr3 != nil, okFinal3)
+	fmt.Println()
+	return nil
+}
+
 func main() {
 	ctx := context.Background()
+
+	if err := demoStreamingSupervision(ctx); err != nil {
+		log.Fatalf("streaming supervision demo: %v", err)
+	}
 
 	fmt.Println("Genkit 1.7 Middleware Showcase")
 	fmt.Println("==============================")

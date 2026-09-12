@@ -41,7 +41,7 @@ Core governance patterns — the simplest entry point.
 
 | Example | Description | API Key | Run |
 |---|---|---|---|
-| **code_to_policy_extractor** | Dynamic Architecture Linter enforcing Clean Architecture rules on PRs | No | `go run ./code_to_policy_extractor/` |
+| **code_to_policy_extractor** | Clean-Architecture linter on PRs + `ci_gate.sh`: the same policy as a CI gate through `mkit eval` exit codes (0 clean / 1 deny / 2 usage) | No | `go run ./code_to_policy_extractor/` |
 | **custom_policy_format** | A user-defined policy DSL compiled to Datalog and loaded via `LoadPolicy` — the documented replacement for the removed Gherkin compiler | No | `go run ./custom_policy_format/` |
 | **config_driven_app** | Declarative YAML config, generics API (`Define[In,Out]`), and provider registry | No | `go run ./config_driven_app/` |
 | **real_llm_gate** | Minimal supervised LLM call with `QuickClient` + `RegisterSupervised`: allowed and policy-denied case | Optional (mock fallback) | `go run ./real_llm_gate/` |
@@ -52,7 +52,7 @@ Zero-trust policy enforcement — the core value prop of manglekit.
 
 | Example | Description | API Key | Run |
 |---|---|---|---|
-| **devops_policy_gate** | CI/CD security gates blocking dangerous Terraform/K8s operations | No | `go run ./devops_policy_gate/` |
+| **devops_policy_gate** | CI/CD security gates (Terraform/K8s) + tier semantics (T1 blocks vs T2 advisory, P0.7) + Explainable Deny: structured `PolicyViolationError` and the derivation proof tree | No | `go run ./devops_policy_gate/` |
 | **compliance_proof** | GDPR as tiered Datalog — `AssessPlan` renders `AuditTrail` as machine-checkable proof | No | `go run ./compliance_proof/` |
 | **jailbreak_proof_agent** | T0 taint axiom blocks data exfiltration — mock LLM complies with injection but kernel holds | No | `go run ./jailbreak_proof_agent/` |
 | **verified_reasoning** | Cheap model + symbolic verifier = certified-correct output via verify-retry loop | No | `go run ./verified_reasoning/` |
@@ -104,13 +104,13 @@ External system integrations, LLM bridges, and production infrastructure.
 | Example | Description | API Key | Run |
 |---|---|---|---|
 | **mcp_tool_integration** | Model Context Protocol server integration with policy-gated tool execution | No | `go run ./mcp_tool_integration/` |
-| **genkit_middleware_showcase** | Genkit middleware composition (Retry, Fallback, Tool Approval) | Yes | `go run ./genkit_middleware_showcase/` |
+| **genkit_middleware_showcase** | Genkit middleware (Retry, Fallback, Tool Approval) + Supervised Streaming: pre-check denies BEFORE the first chunk (provider never opened); OUTPUT-rule post-check refuses the assembled stream | Yes | `go run ./genkit_middleware_showcase/` |
 | **session_recovery** | Durable session state persistence and crash recovery | No | `go run ./session_recovery/` |
-| **policy_copilot** | NL→Datalog rule generation with schema extraction, few-shot learning, and syntax verification | No (mock LLM) | `go run ./policy_copilot/` |
+| **policy_copilot** | NL→Datalog generation (schema extraction, few-shot, syntax check) + signed packaging: rule → `x/genes` T3 Gene → tamper-checked pool → enforcement only via the policy channel | No (mock LLM) | `go run ./policy_copilot/` |
 | **extractor_bridge** | LLM text→struct extraction — the neuro-symbolic bridge feeding Datalog | No (mock LLM) | `go run ./extractor_bridge/` |
 | **production_resilience** | Circuit breaker (Closed→Open→HalfOpen) + OpenTelemetry tracing + middleware | No | `go run ./production_resilience/` |
 | **persistent_store** | BadgerDB-backed session/knowledge store (`WithSyncWrites(true)` durability) with close/reopen restart-resume | No | `go run ./persistent_store/` |
-| **http_service** | manglekit embedded in a `net/http` server: `/ask` endpoint executing a supervised action (403 on policy deny) | No | `go run ./http_service/` |
+| **http_service** | manglekit in a `net/http` server: `/ask` supervised action (403 on deny) + `/admin/reload` hot policy swap — fail-safe: a rejected reload keeps the old policy serving | No | `go run ./http_service/` |
 
 ## Manglekit Features Demonstrated
 
@@ -121,7 +121,12 @@ External system integrations, LLM bridges, and production infrastructure.
 | Assess (policy evaluation) | `Engine().Assess()` | custom_policy_format, route_chaining, config_driven_app, knowledge_graph_reasoning |
 | AssessPlan (pure policy-decision) | `Engine().AssessPlan()` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_document_generator, jailbreak_proof_agent |
 | AuditTrail rendering | `core.AuditTrail` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_document_generator |
-| Tiered governance (T0–T3) | `core.Tier` | compliance_proof, devops_policy_gate, ooda_document_generator |
+| Tiered governance (T0–T3, real block/advisory split) | `core.Tier`, supervisor gate | compliance_proof, devops_policy_gate, ooda_document_generator |
+| Explainable deny | `client.Explain`, structured `PolicyViolationError` | devops_policy_gate |
+| Hot policy reload | `client.ReloadPolicy` (fail-safe atomic swap) | http_service |
+| Supervised streaming | `adapters/ai.NewStreamingSupervisedAction` | genkit_middleware_showcase |
+| CI exit-code contract | `mkit eval` → 0/1/2/3 | code_to_policy_extractor (`ci_gate.sh`) |
+| Signed learned-rule packaging | `x/genes` (Gene/Pool/Compile/ApplyTo) | policy_copilot, learn_from_code |
 | Goal-based planning | `client.Plan()` / `client.ExecutePlan()` | goal_based_planning |
 | Function adapter | `adapters/func` | hybrid_rag, devops_policy_gate, code_to_policy_extractor |
 | Knowledge graphs (N-Triples) | `adapters/knowledge` | knowledge_graph_reasoning, hybrid_rag, silo_storage |

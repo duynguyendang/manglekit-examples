@@ -2,7 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	function "github.com/duynguyendang/manglekit/adapters/func"
@@ -179,5 +184,89 @@ func TestPolicyEngine_ViolatingPR(t *testing.T) {
 	_, err = client.ExecuteByName(ctx, "review_pr", violatingPR)
 	if !core.IsPolicyViolationError(err) {
 		t.Errorf("Expected violating PR to be blocked (PolicyViolationError), but got: %v", err)
+	}
+}
+
+// ============================================================================
+// CI exit-code contract (v0.9): mkit eval as a policy gate
+// ============================================================================
+
+// kernelModuleDir resolves the sibling manglekit module (same layout
+// assumption as dogfood scripts; override with MANGLEKIT_DIR).
+func kernelModuleDir(t *testing.T) string {
+	t.Helper()
+	if env := os.Getenv("MANGLEKIT_DIR"); env != "" {
+		return env
+	}
+	dir, err := filepath.Abs(filepath.Join(exampleDir(), "..", "..", "manglekit"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
+		t.Skipf("sibling manglekit module not found at %s (set MANGLEKIT_DIR): %v", dir, err)
+	}
+	return dir
+}
+
+// buildMkit compiles the CLI from within the manglekit module itself — the
+// examples module does not carry the CLI's transitive deps in its go.sum.
+func buildMkit(t *testing.T) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "mkit")
+	cmd := exec.Command("go", "build", "-C", kernelModuleDir(t), "-o", bin, "./cmd/mkit")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build mkit: %v\n%s", err, out)
+	}
+	return bin
+}
+
+func runEvalGate(t *testing.T, mkit, facts string) (int, string) {
+	t.Helper()
+	policy := filepath.Join(t.TempDir(), "policy.dl")
+	if err := os.WriteFile(policy, []byte(ciPolicy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(mkit, "eval",
+		"--policy", policy, "--facts", facts, "--query", `halt(Req, Reason)`, "--quiet")
+	out, err := cmd.CombinedOutput()
+	code := 0
+	if err != nil {
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) {
+			t.Fatalf("run eval: %v", err)
+		}
+		code = ee.ExitCode()
+	}
+	return code, string(out)
+}
+
+func TestCIGateExitCodes(t *testing.T) {
+	mkit := buildMkit(t)
+	dir := exampleDir()
+
+	code, out := runEvalGate(t, mkit, filepath.Join(dir, "testdata_violating.pr-graph.nt"))
+	if code != 1 {
+		t.Fatalf("violating PR: exit = %d, want 1 (policy-deny)\n%s", code, out)
+	}
+	if !strings.Contains(out, "policy-deny") || !strings.Contains(out, "controller must not import domain") {
+		t.Errorf("deny output missing reason:\n%s", out)
+	}
+
+	code, out = runEvalGate(t, mkit, filepath.Join(dir, "testdata_clean.pr-graph.nt"))
+	if code != 0 {
+		t.Fatalf("clean PR: exit = %d, want 0\n%s", code, out)
+	}
+
+	// usage error stays 2 and is distinguishable from deny
+	cmd := exec.Command(mkit, "eval", "--policy", "/nonexistent.dl",
+		"--facts", filepath.Join(dir, "testdata_clean.pr-graph.nt"), "--query", "halt(A)")
+	if err := cmd.Run(); err == nil {
+		t.Fatal("expected runtime error for missing policy")
+	} else {
+		var ee *exec.ExitError
+		errors.As(err, &ee)
+		if ee != nil && ee.ExitCode() == 1 {
+			t.Error("runtime failure must not masquerade as policy-deny (exit 1)")
+		}
 	}
 }

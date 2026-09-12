@@ -10,12 +10,16 @@
 // Assess bypasses the supervisor and therefore bypasses the gate — the
 // "policy enforcement at each step" guarantee comes only from ExecuteByName.
 //
-// Note on regressions (do NOT assert otherwise):
-//   - P0.1: the supervisor POST-check (Reflect) is FAIL-OPEN, so only the
-//     PRE-CHECK is a guaranteed block. All scenarios below rely solely on the
-//     pre-check.
-//   - P0.3 (resolved in v0.6): WithFailMode was removed; the pre-check gate
-//     is always fail-closed.
+// Governance semantics shown here (current code, verified):
+//   - Both pre- and post-check are FAIL-CLOSED on verifier errors (ADR-001;
+//     the old P0.1 fail-open note is obsolete — do not reintroduce it).
+//   - halt tiers are REAL: T0/T1 block, explicitly-tagged T2/T3 are advisory
+//     (P0.7), tier-less halts keep the fail-closed default.
+//   - WithFailMode was removed in v0.6; fail-closed is the only mode.
+//
+// Scenarios 10-11 additionally demonstrate Explainable Governance:
+// client.Explain prints the derivation tree, and structured deny errors
+// carry Tier / MatchedRule / ActionName.
 //
 // The Mangle analyzer rejects cross-fact :lt/:lte built-ins, so the numeric
 // comparisons themselves are performed in Go (see attachPrecomputedChecks).
@@ -27,6 +31,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -166,9 +171,8 @@ func main() {
 	fmt.Println()
 
 	// Register one supervised no-op action per operation name. Supervise wraps
-	// each action with the Zero-Trust Gatekeeper. Only the PRE-CHECK is a
-	// guaranteed block (P0.1 regression: the Reflect POST-check is fail-open),
-	// so every scenario below relies on the pre-check halt.
+	// each action with the Zero-Trust Gatekeeper (pre- AND post-check, both
+	// fail-closed). Scenarios below are decided at the pre-check halt.
 	var (
 		scale   opCounter
 		apply   opCounter
@@ -266,9 +270,10 @@ func main() {
 	// --- Scenario 6: Production Deploy With Approval ---
 	fmt.Println("--- Scenario 6: Production Deploy With Approval (Should Allow) ---")
 	meta6 := map[string]string{
-		"image":        "api-server:v1.2.3",
-		"target_env":   "production",
-		"has_approval": "true",
+		"image":             "api-server:v1.2.3",
+		"target_env":        "production",
+		"has_approval":      "true",
+		"has_rollback_plan": "true",
 	}
 	ran, err = runGoverned(ctx, client, "kubectl_deploy", &deploy.executed, meta6, nil)
 	if err == nil && ran {
@@ -324,6 +329,65 @@ func main() {
 		fmt.Printf("✅ Blocked: %v\n", err)
 	} else {
 		fmt.Println("❌ Unexpectedly allowed (should have blocked public database)")
+	}
+	fmt.Println()
+
+	// --- Scenario 10: T1 governance rule BLOCKS + explainable deny ---
+	fmt.Println("--- Scenario 10: Prod Deploy, approved but NO rollback plan (T1 rule → Block) ---")
+	meta10 := map[string]string{
+		"image":        "api-server:v2.0.0",
+		"target_env":   "production",
+		"has_approval": "true", // approval alone is no longer enough
+	}
+	ran, err = runGoverned(ctx, client, "kubectl_deploy", &deploy.executed, meta10, nil)
+	if core.IsPolicyViolationError(err) && !ran {
+		var pve *core.PolicyViolationError
+		if errors.As(err, &pve) {
+			fmt.Printf("✅ Blocked with structured provenance: tier=%s action=%s matched=%s\n",
+				pve.Tier, pve.ActionName, pve.MatchedRule)
+		} else {
+			fmt.Printf("✅ Blocked: %v\n", err)
+		}
+	} else {
+		fmt.Printf("❌ Expected T1 block, got ran=%v err=%v\n", ran, err)
+	}
+	// Explain the deny: backward-chain the query to a proof tree.
+	expl, xerr := client.Explain(ctx, `halt("Req", Reason, Tier)`, []string{
+		`action_operation("Req", "kubectl_deploy").`,
+		`meta("target_env", "production").`,
+		`meta("has_approval", "true").`,
+	})
+	if xerr != nil {
+		fmt.Printf("explain failed: %v\n", xerr)
+	} else {
+		fmt.Printf("🔍 Why (Explain, outcome=%v):\n%s\n", expl.Outcome, expl.String())
+	}
+	fmt.Println()
+
+	// --- Scenario 11: T2 playbook rule is ADVISORY — same policy, different tier ---
+	fmt.Println("--- Scenario 11: Prod Deploy with rollback plan but no canary (T2 rule → Allow + visible advisory) ---")
+	meta11 := map[string]string{
+		"image":             "api-server:v2.0.0",
+		"target_env":        "production",
+		"has_approval":      "true",
+		"has_rollback_plan": "true",
+		"has_canary":        "false", // trips the T2 playbook rule
+	}
+	ran, err = runGoverned(ctx, client, "kubectl_deploy", &deploy.executed, meta11, nil)
+	if err == nil && ran {
+		fmt.Println("✅ Allowed: T2 is explicitly-tagged advisory — it never reaches the caller; Explain shows what the gate saw.")
+		expl2, xerr2 := client.Explain(ctx, `halt("Req", Reason, Tier)`, []string{
+			`action_operation("Req", "kubectl_deploy").`,
+			`meta("target_env", "production").`,
+			`meta("has_approval", "true").`,
+			`meta("has_rollback_plan", "true").`,
+			`meta("has_canary", "false").`,
+		})
+		if xerr2 == nil && expl2.Outcome {
+			fmt.Printf("🔍 The policy DID have an opinion (Explain shows what the gate saw):\n%s\n", expl2.String())
+		}
+	} else {
+		fmt.Printf("❌ T2 advisory must not block: ran=%v err=%v\n", ran, err)
 	}
 	fmt.Println()
 

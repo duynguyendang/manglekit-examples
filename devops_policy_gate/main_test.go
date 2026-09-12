@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -157,6 +159,7 @@ func TestProdDeployWithApproval(t *testing.T) {
 	env := core.NewEnvelope(map[string]string{})
 	env.Metadata["target_env"] = "production"
 	env.Metadata["has_approval"] = "true"
+	env.Metadata["has_rollback_plan"] = "true" // required by the T1 rule
 	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_deploy"}, env)
 	if core.IsAlignmentError(err) {
 		t.Errorf("expected approved production deploy to be allowed, got: %v", err)
@@ -283,5 +286,84 @@ func TestSupervisedOpenSecurityGroupBlocked(t *testing.T) {
 	}
 	if atomic.LoadInt32(executed) != 0 {
 		t.Errorf("inner action should NOT have executed, ran %d time(s)", atomic.LoadInt32(executed))
+	}
+}
+
+// ============================================================================
+// Tier semantics (P0.7) + explainable governance
+// ============================================================================
+
+func TestSupervisedTierT1Blocks(t *testing.T) {
+	client := setupClient(t)
+	ctx := context.Background()
+	executed := registerSupervisedNoOp(t, client, "kubectl_deploy")
+
+	_, err := client.ExecuteByName(ctx, "kubectl_deploy", map[string]string{},
+		sdk.WithMetadata("target_env", "production"),
+		sdk.WithMetadata("has_approval", "true")) // but no rollback plan
+	if !core.IsPolicyViolationError(err) {
+		t.Fatalf("T1 rule must block, got %v", err)
+	}
+	var pve *core.PolicyViolationError
+	if !errors.As(err, &pve) {
+		t.Fatal("expected *core.PolicyViolationError")
+	}
+	if pve.Tier != "T1" {
+		t.Errorf("structured deny Tier = %q, want T1", pve.Tier)
+	}
+	if !strings.Contains(pve.MatchedRule, "rollback plan") {
+		t.Errorf("MatchedRule = %q, want the T1 rollback rule", pve.MatchedRule)
+	}
+	if pve.ActionName != "kubectl_deploy" {
+		t.Errorf("ActionName = %q", pve.ActionName)
+	}
+	if atomic.LoadInt32(executed) != 0 {
+		t.Error("inner action must not run on T1 deny")
+	}
+}
+
+// The same shape at T2: advisory — execution proceeds. This is the P0.7
+// contract: explicit soft tiers never block, tier-less/unknown still do.
+func TestSupervisedTierT2AdvisoryAllows(t *testing.T) {
+	client := setupClient(t)
+	ctx := context.Background()
+	executed := registerSupervisedNoOp(t, client, "kubectl_deploy")
+
+	_, err := client.ExecuteByName(ctx, "kubectl_deploy", map[string]string{},
+		sdk.WithMetadata("target_env", "production"),
+		sdk.WithMetadata("has_approval", "true"),
+		sdk.WithMetadata("has_rollback_plan", "true"),
+		sdk.WithMetadata("has_canary", "false")) // trips the T2 playbook rule
+	if err != nil {
+		t.Fatalf("T2 advisory must not block: %v", err)
+	}
+	if atomic.LoadInt32(executed) != 1 {
+		t.Errorf("inner action should have run once, ran %d", atomic.LoadInt32(executed))
+	}
+}
+
+// Explain turns a deny into a proof tree — the "why" is queryable, not a log
+// scavenger hunt.
+func TestExplainableDenyProof(t *testing.T) {
+	client := setupClient(t)
+	ctx := context.Background()
+
+	expl, err := client.Explain(ctx, `halt("Req", Reason, Tier)`, []string{
+		`action_operation("Req", "kubectl_deploy").`,
+		`meta("target_env", "production").`,
+		`meta("has_approval", "true").`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !expl.Outcome {
+		t.Fatal("expected the T1 rollback rule to derive a halt")
+	}
+	rendered := expl.String()
+	if !strings.Contains(rendered, "rollback plan") || !strings.Contains(rendered, "[T1]") {
+		t.Errorf("proof tree missing rule/tier:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "!meta(\"has_rollback_plan\",\"true\")") {
+		t.Errorf("proof tree should expose the failed negation:\n%s", rendered)
 	}
 }

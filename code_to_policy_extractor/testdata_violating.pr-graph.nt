@@ -1,0 +1,3 @@
+<file1> <file_path> "controllers/" .
+<file1> <file_imports> "domain/" .
+<file1> <file_name_matches> "_helper.go" .

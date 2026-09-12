@@ -61,3 +61,21 @@ halt("Req", "Scale exceeds maximum replicas") :-
 halt("Req", "Cannot scale to zero replicas") :-
     action_operation("Req", "kubectl_scale"),
     meta("scale_too_low", "true").
+
+% --- Tier-attributed rules (explicit halt/3 tiers, resolved P0.7 semantics) ---
+%
+% The third halt argument carries the governance tier. The supervisor's gate
+% blocks only on T0/T1; explicit T2/T3 rules are ADVISORY (the action runs).
+% Tier-less halts (all rules above) keep the fail-closed default: block.
+
+% T1 governance: production deployments need a rollback plan — BLOCKS.
+halt("Req", "Production deployments require a rollback plan", "T1") :-
+    action_operation("Req", "kubectl_deploy"),
+    meta("target_env", "production"),
+    !meta("has_rollback_plan", "true").
+
+% T2 playbook: an explicit negative flag (not absence) so only opted-in
+% scenarios trip it — this rule is VISIBLE in Explain but NEVER blocks.
+halt("Req", "deploy without canary rollout is discouraged by the release playbook", "T2") :-
+    action_operation("Req", "kubectl_deploy"),
+    meta("has_canary", "false").

@@ -7,6 +7,11 @@
 //	PolicyViolationError       -> 403 {"error": ...}
 //	any other error            -> 500 {"error": ...}
 //
+// It also demonstrates HOT POLICY RELOAD in-process: POST /admin/reload
+// swaps the active policy atomically (parse + evaluate against a copy of
+// state BEFORE the swap). A failed reload keeps the old policy serving —
+// the same guarantee `mkit serve` exposes via SIGHUP, minus the signal.
+//
 // Without OPENAI_API_KEY/GOOGLE_API_KEY the LLM is a testutil.MockLLM, so
 // the service is fully deterministic and needs no key.
 package main
@@ -49,6 +54,11 @@ type Server struct {
 	client *sdk.Client
 }
 
+// ReloadRequest asks the server to atomically swap its active policy.
+type ReloadRequest struct {
+	PolicyPath string `json:"policy_path"`
+}
+
 // policyPath resolves policy.dl relative to this file (cwd-safe).
 func policyPath() string {
 	const rel = "policy.dl"
@@ -88,6 +98,7 @@ func NewServer(ctx context.Context) (*Server, error) {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /ask", s.handleAsk)
+	mux.HandleFunc("POST /admin/reload", s.handleReload)
 	return mux
 }
 
@@ -126,6 +137,25 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, AskResponse{Reply: fmt.Sprintf("%v", out.Payload)})
 }
 
+// handleReload hot-swaps the active policy from a new file. On success the
+// very next request is evaluated against the new program; on failure the
+// old policy is still active and the error is reported (never partial).
+// The swap also proves engine builtins survive reloads: the std.dl deny/halt
+// vocabulary and planner rules keep working after the swap.
+func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
+	var req ReloadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.PolicyPath == "" {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: `invalid body: {"policy_path": "..."} required`})
+		return
+	}
+	if err := s.client.ReloadPolicy(r.Context(), req.PolicyPath); err != nil {
+		// Fail-safe: the reload was rejected, the OLD policy stays active.
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "reload failed, previous policy still active: " + err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "reloaded", "policy": req.PolicyPath})
+}
+
 func main() {
 	ctx := context.Background()
 	srv, err := NewServer(ctx)
@@ -135,7 +165,9 @@ func main() {
 	defer srv.Shutdown(ctx)
 
 	addr := ":8080"
-	fmt.Printf("http_service listening on %s (POST /ask {\"topic\":..., \"query\":...})\n", addr)
+	fmt.Printf("http_service listening on %s\n", addr)
+	fmt.Println("  POST /ask           {\"topic\":..., \"query\":...}  — supervised question")
+	fmt.Println("  POST /admin/reload  {\"policy_path\":...}          — hot policy swap (fail-safe)")
 	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
 		log.Fatal(err)
 	}

@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/duynguyendang/manglekit/adapters/ai"
 	"github.com/duynguyendang/manglekit/core"
+	"github.com/duynguyendang/manglekit/sdk"
+	"github.com/duynguyendang/manglekit/testutil"
 	"github.com/firebase/genkit/go/plugins/middleware"
+	"github.com/stretchr/testify/require"
 )
 
 // stubGenerator implements core.TextGenerator so it can stand in for the
@@ -211,4 +215,53 @@ func TestNoKeyRetryPath(t *testing.T) {
 	if gen.calls < 2 {
 		t.Errorf("expected >=2 generator calls (retry would re-invoke), got %d", gen.calls)
 	}
+}
+
+// TestStreamingSupervision locks the three coverage moments:
+// pre-check denies before the provider is opened (zero calls, zero chunks),
+// allowed streams expose a post-checked final envelope, and an OUTPUT-entity
+// rule converts an already-streamed response into a terminal error with no
+// usable final.
+func TestStreamingSupervision(t *testing.T) {
+	ctx := context.Background()
+	client, err := sdk.NewClient(ctx)
+	require.NoError(t, err)
+	defer func() { _ = client.Shutdown(ctx) }()
+	require.NoError(t, client.LoadPolicy(ctx, streamingPolicy))
+
+	gen := testutil.NewMockLLM("chunk-A ", "chunk-B ")
+
+	// 1) deny before first chunk: stream not opened, provider never called.
+	denied := core.Envelope{Payload: "p"}
+	denied.Metadata = map[string]any{"topic": "passwords"}
+	answer, err := ai.NewStreamingSupervisedAction("stream_answer", gen, client.Engine())
+	require.NoError(t, err)
+	callsBefore := gen.Calls()
+	ch, err := answer.Stream(ctx, denied)
+	require.Error(t, err, "policy deny must surface before any chunk")
+	require.Nil(t, ch)
+	require.Equal(t, callsBefore, gen.Calls(), "provider must not be opened")
+	require.True(t, core.IsPolicyViolationError(err) || strings.Contains(err.Error(), "pre-check denied"))
+
+	// 2) allowed stream: chunks flow, final envelope available post-check.
+	ok := core.Envelope{Payload: "p"}
+	ok.Metadata = map[string]any{"topic": "cooking"}
+	ch2, err := answer.Stream(ctx, ok)
+	require.NoError(t, err)
+	text, termErr := streamTo(ctx, ch2)
+	require.NoError(t, termErr)
+	require.NotEmpty(t, text)
+	_, okFinal := answer.FinalEnvelope()
+	require.True(t, okFinal, "post-check passed → final envelope must be usable")
+
+	// 3) OUTPUT-entity rule: chunks may arrive but the assembled response is
+	// refused — terminal error chunk, no final envelope.
+	review, err := ai.NewStreamingSupervisedAction("stream_review", gen, client.Engine())
+	require.NoError(t, err)
+	ch3, err := review.Stream(ctx, ok)
+	require.NoError(t, err)
+	_, termErr3 := streamTo(ctx, ch3)
+	require.Error(t, termErr3, "post-check denial must arrive as terminal chunk error")
+	_, okFinal3 := review.FinalEnvelope()
+	require.False(t, okFinal3)
 }
