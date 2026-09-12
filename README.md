@@ -84,10 +84,7 @@ Observe-Orient-Decide-Act loops with entropic steering and self-correction.
 
 | Example | Description | API Key | Run |
 |---|---|---|---|
-| **ooda_document_generator** | Full 5-phase OODA loop with self-correction and Datalog policies | No | `go run ./cognition/ooda_document_generator/` |
-| **ooda_east_generation** | `RunOODA` (core) / `x/east.RunOODAEAST` with EAST steering, mixed-precision memory, Teacher-Student retry | No | `go run ./cognition/ooda_east_generation/` |
-| **ooda_genkit_flow** | OODA loop exposed as Genkit HTTP flows — `DefineFlow`, `DefineStreamingFlow`, `FlowRegistry` | No (mock Brain) | `go run ./cognition/ooda_genkit_flow/` |
-| **route_chaining** | `ROUTE` decision outcome, dynamic action chaining, paradox injection, SteerKB | No | `go run ./cognition/route_chaining/` |
+| **ooda_east_generation** | The OODA tour: `RunOODA`/`RunOODAEAST`, EAST steering + Teacher-Student retry, mixed-precision memory, ROUTE chaining + SteerKB + paradox (ex `ooda_east_generation`), custom 5-phase strategies & multi-turn convergence (ex `ooda_east_generation`) | No | `go run ./cognition/ooda_east_generation/` |
 | **skill_learning** | Cross-session skill learning: file-backed `ooda.Memory` (auto-Commit learner, Orient-time Recall) + `ports.ReasoningPort` route learning for `SteerKB` — session 2 needs fewer refinements and takes the learned fast path after a simulated restart | No | `go run ./learning/skill_learning/` |
 | **learn_from_code** | UC-L8 "learn from code" skill: deterministic intent router (LEARN/EVAL/PROMOTE/STATUS) — source tree → signals → induced `x/genes` candidates (advisory T2/T3 only, signed, provenanced), shadow EVAL through the real gate, human-confirmed PROMOTE to T1 that then DENIES (`docs/use-cases/learning.md`) | No | `go run ./learning/learn_from_code/` |
 
@@ -107,7 +104,7 @@ External system integrations, LLM bridges, and production infrastructure.
 | Example | Description | API Key | Run |
 |---|---|---|---|
 | **mcp_tool_integration** | Model Context Protocol server integration with policy-gated tool execution | No | `go run ./integration/mcp_tool_integration/` |
-| **genkit_middleware_showcase** | Genkit middleware (Retry, Fallback, Tool Approval) + Supervised Streaming: pre-check denies BEFORE the first chunk (provider never opened); OUTPUT-rule post-check refuses the assembled stream | Yes | `go run ./cognition/genkit_middleware_showcase/` |
+| **genkit_middleware_showcase** | Genkit middleware (Retry, Fallback, Tool Approval) + Supervised Streaming + OODA-as-Genkit-flows (`OODAFlow`, `FlowRegistry`, ex `genkit_middleware_showcase`): pre-check denies BEFORE the first chunk (provider never opened); OUTPUT-rule post-check refuses the assembled stream | Yes | `go run ./cognition/genkit_middleware_showcase/` |
 | **session_recovery** | Durable session state persistence and crash recovery | No | `go run ./storage/session_recovery/` |
 | **policy_copilot** | NL→Datalog generation (schema extraction, few-shot, syntax check) + signed packaging: rule → `x/genes` T3 Gene → tamper-checked pool → enforcement only via the policy channel | No (mock LLM) | `go run ./learning/policy_copilot/` |
 | **extractor_bridge** | LLM text→struct extraction — the neuro-symbolic bridge feeding Datalog | No (mock LLM) | `go run ./knowledge/extractor_bridge/` |
@@ -135,10 +132,10 @@ What this suite demonstrates — and where you can watch it fail closed:
 |---|---|---|
 | Datalog policy engine | `core.Evaluator` | All examples |
 | Zero-trust supervisor | `client.Supervise()` → `client.ExecuteByName()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning, session_recovery, config_driven_app |
-| Assess (policy evaluation) | `Engine().Assess()` | custom_policy_format, route_chaining, config_driven_app, knowledge_graph_reasoning |
-| AssessPlan (pure policy-decision) | `Engine().AssessPlan()` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_document_generator, jailbreak_proof_agent |
-| AuditTrail rendering | `core.AuditTrail` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_document_generator |
-| Tiered governance (T0–T3, real block/advisory split) | `core.Tier`, supervisor gate | compliance_proof, devops_policy_gate, ooda_document_generator |
+| Assess (policy evaluation) | `Engine().Assess()` | custom_policy_format, ooda_east_generation, config_driven_app, knowledge_graph_reasoning |
+| AssessPlan (pure policy-decision) | `Engine().AssessPlan()` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_east_generation, jailbreak_proof_agent |
+| AuditTrail rendering | `core.AuditTrail` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_east_generation |
+| Tiered governance (T0–T3, real block/advisory split) | `core.Tier`, supervisor gate | compliance_proof, devops_policy_gate, ooda_east_generation |
 | Explainable deny | `client.Explain`, structured `PolicyViolationError` | devops_policy_gate |
 | Hot policy reload | `client.ReloadPolicy` (fail-safe atomic swap) | http_service |
 | Supervised streaming | `adapters/ai.NewStreamingSupervisedAction` | genkit_middleware_showcase |
@@ -150,22 +147,22 @@ What this suite demonstrates — and where you can watch it fail closed:
 | Hybrid memory (RAG) | `sdk.HybridMemory` | hybrid_rag |
 | Vector store | `adapters/vector` | hybrid_rag, silo_storage |
 | External predicates | `client.RegisterExternalPredicate()` | hybrid_rag |
-| EvaluateSteering | `Engine().EvaluateSteering()` | hybrid_rag, route_chaining |
+| EvaluateSteering | `Engine().EvaluateSteering()` | hybrid_rag, ooda_east_generation |
 | Security / taint labels | `core.Envelope.SecurityLabels` | jailbreak_proof_agent, hybrid_rag |
 | Policy violation detection | `core.IsPolicyViolationError()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning |
-| OODA cognitive loop (5-phase) | `x/ooda` | ooda_document_generator |
+| OODA cognitive loop (5-phase) | `x/ooda` | ooda_east_generation |
 | RunOODA / RunOODAEAST | `x/ooda` (`RunOODA`), `x/east` (`RunOODAEAST`) | ooda_east_generation |
-| EAST steering (entropy/saliency) | `x/east` | ooda_east_generation, route_chaining |
+| EAST steering (entropy/saliency) | `x/east` | ooda_east_generation, ooda_east_generation |
 | Mixed-precision memory | `ooda.PinAxiom` / `AddContext` / `ShaveContext` | ooda_east_generation |
-| Tool registry & dispatcher | `ooda.Registry` / `ooda.Dispatcher` | ooda_east_generation, ooda_document_generator |
-| OODA as Genkit flow | `x/oodaflow` (package `oodaflow`) | ooda_genkit_flow |
-| FlowRegistry | `adapters/ai.FlowRegistry` | ooda_genkit_flow |
-| ROUTE decision (dynamic chaining) | `core.DecisionRoute` | route_chaining |
-| Paradox injection | `x/east.ShouldInjectParadox()` | route_chaining |
+| Tool registry & dispatcher | `ooda.Registry` / `ooda.Dispatcher` | ooda_east_generation, ooda_east_generation |
+| OODA as Genkit flow | `x/oodaflow` | genkit_middleware_showcase |
+| FlowRegistry | `x/oodaflow.FlowRegistry` | genkit_middleware_showcase |
+| ROUTE decision (dynamic chaining) | `core.DecisionRoute` | ooda_east_generation |
+| Paradox injection | `x/east.ShouldInjectParadox()` | ooda_east_generation |
 | Cross-session skill learning | `ooda.Memory` (`Builder.WithMemory`, auto-Commit in `eastPostAct`) + `ports.ReasoningPort` (`SteerKB`) | skill_learning |
 | Learn-from-code skill (UC-L8): intent router + `x/genes` induction/promotion | `x/genes` (`Gene`/`Pool`/`Compile`/`ApplyTo`), `sdk.Client` supervised EVAL | learn_from_code |
 | MCP integration | `adapters/mcp` | mcp_tool_integration |
-| Genkit middleware | `adapters/ai` | genkit_middleware_showcase, ooda_genkit_flow |
+| Genkit middleware | `adapters/ai` | genkit_middleware_showcase, genkit_middleware_showcase |
 | Session state recovery | `core.StateProvider` | session_recovery |
 | Durable state (checkpoint/hydrate) | `core.SessionState` | session_recovery, multi_agent_research |
 | Multi-agent runtime | `multiagent.AgentSystem` | multi_agent_research |
@@ -185,7 +182,7 @@ What this suite demonstrates — and where you can watch it fail closed:
 | Scenario runner (BDD tests) | `scenario.Run()` | jailbreak_proof_agent |
 | Struct → Datalog (Zero-Config Reflection) | `mangle` struct tags | code_to_policy_extractor, hybrid_rag, policy_copilot |
 | QuickClient / RegisterSupervised | `manglekit.QuickClient` / `Client.RegisterSupervised` | real_llm_gate, http_service |
-| cwd-safe fixture loading | `manglekit.MustReadFile` | hybrid_rag, compliance_proof, route_chaining, verified_reasoning, real_llm_gate, http_service |
+| cwd-safe fixture loading | `manglekit.MustReadFile` | hybrid_rag, compliance_proof, ooda_east_generation, verified_reasoning, real_llm_gate, http_service |
 | Test doubles (mocks) | `manglekit/testutil` (MockLLM, DeterministicEmbedder, InMemoryStateProvider, WorkflowSessionStore) | hybrid_rag, silo_storage, session_recovery, multi_agent_research, real_llm_gate, http_service |
 | Durable BadgerDB state | `WithSyncWrites(true)` + batch fact writes | persistent_store |
 
@@ -214,7 +211,7 @@ These examples pin the **current** architecture behavior:
   in v0.5.0 to cover the `multiagent` paths (`agent_system.go:269`, `workflow_executor.go:155`).
   Facts built from dynamic/trusted-local values are safe.
 
-- **`ooda.NewLoop` (used by ooda_document_generator) is experimental** (ROADMAP §P3); the
+- **`ooda.NewLoop` (used by ooda_east_generation's document-phases section) is experimental** (ROADMAP §P3); the
   canonical entry points are `ooda.NewBuilder()...Build()` + `ooda.RunOODA` and
   `x/east.RunOODAEAST`. Since v0.8 the EAST (OODA v4) path lives in the optional
   `x/east` extension — the deterministic `x/ooda` chassis stays dependency-free of it.
@@ -240,10 +237,7 @@ All examples include tests. No external API keys required for tests — mocks ar
     verified_reasoning/  -- symbolic verify-retry certification loop
     custom_policy_format/ -- user DSL → Datalog via LoadPolicy
   cognition/             -- OODA / EAST loops (x/ extension family)
-    ooda_east_generation/ -- RunOODA/RunOODAEAST, EAST steering
-    ooda_document_generator/ -- full 5-phase loop
-    ooda_genkit_flow/    -- OODA as Genkit flow + streaming
-    route_chaining/      -- ROUTE decision + paradox injection
+    ooda_east_generation/ -- OODA tour: EAST retry, ROUTE/SteerKB/paradox, custom phases
     genkit_middleware_showcase/ -- middleware + supervised streaming
     goal_based_planning/ -- Datalog-driven action planning
   learning/              -- learn-from-X, human-gated promotion

@@ -1,4 +1,4 @@
-// route_chaining demonstrates three routing patterns in manglekit:
+// routing.go - three routing patterns (merged from route_chaining, 2026-09-12):
 //
 //  1. Basic ROUTE: EvaluateSteering routes by envelope metadata
 //     (data_type → specialized handler via route(Req, Target, Tier) rules).
@@ -17,9 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"math"
-	"os"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit/core"
@@ -52,19 +50,17 @@ func pathName(p ooda.ExecutionPath) string {
 	}
 }
 
-func main() {
-	ctx := context.Background()
-
+func demoRoutingSteering(ctx context.Context) error {
 	routingPolicy := manglekit.MustReadFile("routing.dl")
 
 	client, err := sdk.NewClient(ctx)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	defer client.Shutdown(ctx)
+	defer func() { _ = client.Shutdown(ctx) }()
 
 	if err := client.Engine().LoadPolicy(ctx, string(routingPolicy)); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	// =====================================================================
@@ -207,8 +203,8 @@ func main() {
 
 	fmt.Println()
 	if !allPass {
-		fmt.Println("Some checks FAILED.")
-		os.Exit(1)
+		return fmt.Errorf("routing checks failed")
 	}
-	fmt.Println("All checks passed.")
+	fmt.Println("All routing checks passed.")
+	return nil
 }

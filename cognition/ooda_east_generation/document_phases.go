@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -13,6 +12,7 @@ import (
 
 // ============================================================
 // OODA Multi-Turn Document Generator with Steering Feedback
+// (merged from ooda_document_generator, 2026-09-12)
 // ============================================================
 //
 // Demonstrates: Observe → Orient → Decide ⇄ Verify (feedback loop) → Act
@@ -357,9 +357,7 @@ func (a *MultiTurnActor) Act(ctx context.Context, frame *ooda.CognitiveFrame) er
 	return nil
 }
 
-func main() {
-	ctx := context.Background()
-
+func demoDocumentPhases(ctx context.Context) error {
 	fmt.Println("🔁 OODA Multi-Turn Document Generator with Steering")
 	fmt.Println("===================================================")
 	fmt.Println("Pattern: Observe → Orient → Decide ⇄ Verify (feedback) → Act")
@@ -369,8 +367,9 @@ func main() {
 	// 1. Initialize
 	client, err := sdk.NewClient(ctx)
 	if err != nil {
-		log.Fatalf("Failed to initialize client: %v", err)
+		return err
 	}
+	defer func() { _ = client.Shutdown(ctx) }()
 
 	gen := &DocumentGenerator{
 		maxRounds: 5,
@@ -457,4 +456,5 @@ func main() {
 	if summary := resultFrame.GetAuditSummary(); summary != "No audit trail available" {
 		fmt.Printf("\nAudit Summary:\n%s\n", summary)
 	}
+	return nil
 }

@@ -1,13 +1,14 @@
-// ooda_east_generation demonstrates the OODA v4 EAST engine
-// (`manglekit/x/ooda/`):
+// ooda_east_generation is the full OODA tour on x/ooda + x/east:
 //   - RunOODA: deterministic tool flow (no EAST)
-//   - RunOODAEAST: generation flow with EAST steering
-//   - PinAxiom / AddContext / ShaveContext: mixed-precision memory
-//   - EAST state: entropy, saliency, trust tier, steering magnitude
-//   - Teacher-Student retry loop in eastPostAct
-//   - Sentinel errors: ErrT0Violation, ErrMaxRefinementIterations
+//   - RunOODAEAST: EAST steering, mixed-precision memory
+//     (PinAxiom/AddContext/ShaveContext), Teacher-Student retry,
+//     sentinel errors ErrT0Violation / ErrMaxRefinementIterations
+//   - routing.go: ROUTE via EvaluateSteering, SteerKB paths, paradox
+//     injection (merged from route_chaining, 2026-09-12)
+//   - document_phases.go: custom phase strategies driving multi-turn
+//     convergence (merged from ooda_document_generator)
 //
-// No API key required (deterministic mock generator + Brain).
+// No API key required (deterministic mocks).
 
 package main
 
@@ -17,6 +18,7 @@ import (
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/x/east"
 	"github.com/duynguyendang/manglekit/x/ooda"
+	"log"
 )
 
 // =========================================================================
@@ -228,6 +230,13 @@ func main() {
 	fmt.Printf("    Context (INT8):       %d atoms (high-weight only)\n", len(ooda.GetContext(frame4)))
 	for _, a := range ooda.GetContext(frame4) {
 		fmt.Printf("      - %s.%s(%s) w=%.1f\n", a.Predicate, a.Subject, a.Object, a.Weight)
+	}
+
+	if err := demoRoutingSteering(ctx); err != nil {
+		log.Fatalf("routing section: %v", err)
+	}
+	if err := demoDocumentPhases(ctx); err != nil {
+		log.Fatalf("document phases section: %v", err)
 	}
 
 	fmt.Println("\nDone.")

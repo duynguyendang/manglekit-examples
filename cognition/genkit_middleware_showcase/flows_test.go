@@ -10,8 +10,8 @@ import (
 )
 
 func TestOODAFlow_Run(t *testing.T) {
-	brain := &mockBrain{}
-	executor := &mockExecutor{}
+	brain := &flowBrain{}
+	executor := &flowToolExecutor{}
 
 	flow := oodaflow.NewOODAFlow(&oodaflow.OODAFlowConfig{
 		Brain:      brain,
@@ -35,8 +35,8 @@ func TestOODAFlow_Run(t *testing.T) {
 }
 
 func TestFlowRegistry_Run(t *testing.T) {
-	brain := &mockBrain{}
-	executor := &mockExecutor{}
+	brain := &flowBrain{}
+	executor := &flowToolExecutor{}
 
 	registry := oodaflow.NewFlowRegistry(nil)
 	flow := oodaflow.NewOODAFlow(&oodaflow.OODAFlowConfig{
@@ -74,7 +74,7 @@ func TestOODAFlowConfig_Defaults(t *testing.T) {
 }
 
 func TestMockBrain(t *testing.T) {
-	brain := &mockBrain{}
+	brain := &flowBrain{}
 	decision, err := brain.Evaluate(context.Background(), &ooda.CognitiveFrame{})
 	if err != nil {
 		t.Fatalf("Evaluate error: %v", err)

@@ -328,6 +328,9 @@ func main() {
 	if err := demoStreamingSupervision(ctx); err != nil {
 		log.Fatalf("streaming supervision demo: %v", err)
 	}
+	if err := demoGenkitFlows(ctx); err != nil {
+		log.Fatalf("genkit flows demo: %v", err)
+	}
 
 	fmt.Println("Genkit 1.7 Middleware Showcase")
 	fmt.Println("==============================")

@@ -1,15 +1,7 @@
-// ooda_genkit_flow demonstrates the OODA loop exposed as Genkit flows:
-//
-//  - OODAFlow: wraps RunOODA with typed I/O (OODAFlowInput/Output)
-//
-//  - DefineFlow: registers the OODA loop as a Genkit HTTP flow endpoint
-//
-//  - FlowRegistry: manages multiple named OODA flows
-//
-// The example uses a mock Brain (no LLM required). With GOOGLE_API_KEY,
-// a real Genkit model can be plugged into the Brain.
-//
-// No API key required (mock Brain + deterministic registry).
+// flows.go — the OODA loop exposed as Genkit flows (merged from
+// ooda_genkit_flow, 2026-09-12): OODAFlow typed I/O, DefineFlow/HTTP
+// registration, and FlowRegistry for multiple named flows. Mock Brain:
+// no API key required.
 
 package main
 
@@ -22,46 +14,44 @@ import (
 	oodaflow "github.com/duynguyendang/manglekit/x/oodaflow"
 )
 
-// mockBrain implements ooda.Brain with deterministic output.
-type mockBrain struct{}
+// flowBrain implements ooda.Brain with deterministic output.
+type flowBrain struct{}
 
-func (b *mockBrain) Evaluate(_ context.Context, frame *ooda.CognitiveFrame) (*core.Decision, error) {
+func (b *flowBrain) Evaluate(_ context.Context, frame *ooda.CognitiveFrame) (*core.Decision, error) {
 	return &core.Decision{
 		Outcome: core.DecisionProceed,
 		Action:  core.NewActionEnvelope("generate", nil),
 	}, nil
 }
 
-func (b *mockBrain) Verify(_ context.Context, frame *ooda.CognitiveFrame) (*core.AuditTrail, error) {
+func (b *flowBrain) Verify(_ context.Context, frame *ooda.CognitiveFrame) (*core.AuditTrail, error) {
 	return &core.AuditTrail{}, nil
 }
 
-func (b *mockBrain) LoadPolicy(_ context.Context, rules string) error {
+func (b *flowBrain) LoadPolicy(_ context.Context, rules string) error {
 	return nil
 }
 
-// mockExecutor runs tools from the registry.
-type mockExecutor struct{}
+// flowToolExecutor runs tools from the registry.
+type flowToolExecutor struct{}
 
-func (e *mockExecutor) Execute(ctx context.Context, frame *ooda.CognitiveFrame, decision *core.Decision) (any, error) {
+func (e *flowToolExecutor) Execute(ctx context.Context, frame *ooda.CognitiveFrame, decision *core.Decision) (any, error) {
 	if decision.Action != nil {
 		return fmt.Sprintf("[flow] executed: %s", decision.Action.Name), nil
 	}
 	return "[flow] executed: unknown", nil
 }
 
-func (e *mockExecutor) Rollback(ctx context.Context, frame *ooda.CognitiveFrame, result any) error {
+func (e *flowToolExecutor) Rollback(ctx context.Context, frame *ooda.CognitiveFrame, result any) error {
 	return nil
 }
 
-func main() {
-	ctx := context.Background()
-
+func demoGenkitFlows(ctx context.Context) error {
 	fmt.Println("=== OODA Genkit Flow Demo ===")
 	fmt.Println()
 
-	brain := &mockBrain{}
-	executor := &mockExecutor{}
+	brain := &flowBrain{}
+	executor := &flowToolExecutor{}
 
 	// =====================================================================
 	// Demo 1: OODAFlow.Run() — direct invocation
@@ -127,5 +117,5 @@ func main() {
 	}
 
 	fmt.Println()
-	fmt.Println("Done.")
+	return nil
 }

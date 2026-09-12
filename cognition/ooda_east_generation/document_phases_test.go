@@ -47,13 +47,13 @@ func TestOODALoopConvergesOnCompliantDoc(t *testing.T) {
 	}
 }
 
-// TestNoPythonFStringRemnantsInMain guards the original regression
+// TestNoPythonFStringRemnants guards the original regression
 // (Python f-string `{'='*60}` printed verbatim). It reads the actual
-// main.go source and asserts none of the round-header printf calls
+// document_phases.go source and asserts none of the round-header printf calls
 // still emit the malformed token.
-func TestNoPythonFStringRemnantsInMain(t *testing.T) {
+func TestNoPythonFStringRemnants(t *testing.T) {
 	_, filename, _, _ := runtime.Caller(0)
-	src, err := os.ReadFile(filepath.Join(filepath.Dir(filename), "main.go"))
+	src, err := os.ReadFile(filepath.Join(filepath.Dir(filename), "document_phases.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
