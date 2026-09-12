@@ -112,6 +112,20 @@ External system integrations, LLM bridges, and production infrastructure.
 | **persistent_store** | BadgerDB-backed session/knowledge store (`WithSyncWrites(true)` durability) with close/reopen restart-resume | No | `go run ./persistent_store/` |
 | **http_service** | manglekit in a `net/http` server: `/ask` supervised action (403 on deny) + `/admin/reload` hot policy swap — fail-safe: a rejected reload keeps the old policy serving | No | `go run ./http_service/` |
 
+## Proof points
+
+What this suite demonstrates — and where you can watch it fail closed:
+
+| Claim | Watch it happen |
+|---|---|
+| Deny is tier-aware, not binary | `devops_policy_gate`: same gate, a T1 halt stops the deploy, a T2 speaks and steps aside |
+| Every deny carries its own proof | `devops_policy_gate`: structured `PolicyViolationError` (tier/rule/action) + `client.Explain` derivation tree with `[negation]` nodes |
+| Policy changes without restarts — safely | `http_service`: `POST /admin/reload` flips verdicts mid-flight; a broken policy file is rejected and the old one keeps serving |
+| Nothing unverified streams out | `genkit_middleware_showcase`: the denied stream proves the provider was never opened (call counter 0→0); a post-check refusal kills the assembled output's finality |
+| The gate works in CI where it counts | `code_to_policy_extractor`: `ci_gate.sh` — exit 0 clean / 1 deny / never a masquerade |
+| Generated rules need provenance + signatures | `policy_copilot`: NL → Datalog → signed T3 gene; a whitespace-only edit is detected and rejected |
+| The kernel learns from itself | `learn_from_code`: whole-tree LEARN → ASK your drafts against the material → PROMOTE is human-only; the kernel's own pool + drift CI live in this repo's `dogfood/` |
+
 ## Manglekit Features Demonstrated
 
 | Feature | Package | Examples |
