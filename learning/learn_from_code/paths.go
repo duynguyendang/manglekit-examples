@@ -21,11 +21,20 @@ import (
 //     used by tests and re-runs — D2)
 //   - result               → sorted + deduped (stable hashing), case where
 //     the walk yields zero .go files fails closed: nothing gets written.
-func resolveLearnPaths(inputs []string) ([]string, error) {
+//   - each target carries a DISPLAY path: files found under a directory root
+//     are shown root-relatively (adapters/x.go, not ../../manglekit/...), so
+//     pool provenance + hashes are location-stable across clones, CI
+//     checkouts, and repo reorganizations.
+type learnTarget struct {
+	Path    string // as-opened path
+	Display string // provenance path (root-relative for walked files)
+}
+
+func resolveLearnPaths(inputs []string) ([]learnTarget, error) {
 	if len(inputs) == 0 {
 		inputs = []string{"."}
 	}
-	set := map[string]bool{}
+	set := map[string]learnTarget{}
 	for _, in := range inputs {
 		fi, err := os.Stat(in)
 		if err != nil {
@@ -45,7 +54,12 @@ func resolveLearnPaths(inputs []string) ([]string, error) {
 				if treeExcluded(p) {
 					return nil
 				}
-				set[filepath.ToSlash(p)] = true
+				full := filepath.ToSlash(p)
+				display := full
+				if rel, rerr := filepath.Rel(in, p); rerr == nil && !strings.HasPrefix(rel, "..") {
+					display = filepath.ToSlash(rel)
+				}
+				set[display] = learnTarget{Path: full, Display: display}
 				return nil
 			})
 			if walkErr != nil {
@@ -56,16 +70,26 @@ func resolveLearnPaths(inputs []string) ([]string, error) {
 		if !strings.HasSuffix(in, ".go") {
 			return nil, fmt.Errorf("learn input %q is neither a directory nor a .go file", in)
 		}
-		set[filepath.ToSlash(in)] = true
+		full := filepath.ToSlash(in)
+		set[full] = learnTarget{Path: full, Display: full}
 	}
 	if len(set) == 0 {
 		return nil, fmt.Errorf("no .go files found under: %s", strings.Join(inputs, ", "))
 	}
-	out := make([]string, 0, len(set))
-	for f := range set {
-		out = append(out, f)
+	// Dedup by REAL path (an explicit file inside a walked dir appears
+	// twice); prefer the shorter root-relative Display.
+	byPath := map[string]learnTarget{}
+	for _, t := range set {
+		key := filepath.Clean(t.Path)
+		if prev, ok := byPath[key]; !ok || len(t.Display) < len(prev.Display) {
+			byPath[key] = t
+		}
 	}
-	sort.Strings(out)
+	out := make([]learnTarget, 0, len(byPath))
+	for _, t := range byPath {
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Display < out[j].Display })
 	return out, nil
 }
 

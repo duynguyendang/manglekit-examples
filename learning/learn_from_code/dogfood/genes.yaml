@@ -1,0 +1,10 @@
+version: 1
+genes:
+    - name: lc-d4a3c4b6-signals
+      tier: T3
+      source: learn_from_code@d4a3c4b6 adapters/storage/session/store.go internal/statemanager/manager.go sdk/ports/session_store.go testutil/testutil.go x/agents/architect.go x/agents/tools/tools.go
+      intents:
+        - review_pr
+      rules: |
+        halt("Req", "destructive bulk operation — require an explicit approval path", "T3") :- code_signal("Req", "destructive_call").
+      signature: 5f8c865d4c9aa2305e547c1b130d2d406c3ea92c803df042c9c4a980f71f531c

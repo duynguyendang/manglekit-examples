@@ -7,7 +7,7 @@ Example applications demonstrating [Manglekit](https://github.com/duynguyendang/
 ```bash
 make build       # build all examples
 make test        # run all example tests
-make run/<name>  # run a specific example (e.g. make run/devops_policy_gate)
+make run/<domain>/<name>  # run a specific example (e.g. make run/governance/devops_policy_gate)
 make clean       # clean test artifacts and binaries
 ```
 
@@ -33,7 +33,10 @@ export GOOGLE_API_KEY=your-key
 
 ## Learning Path
 
-Examples are organized into six domains, ordered by complexity within each group. Start with Foundations and work your way up.
+Examples live under six domain folders — `governance/`, `cognition/`,
+`learning/`, `knowledge/`, `storage/`, `integration/` — one runnable package
+each, with names kept stable since 2026-09. Tables below are ordered by
+complexity within each group; start with Foundations and work your way up.
 
 ### 1. Foundations
 
@@ -41,10 +44,10 @@ Core governance patterns — the simplest entry point.
 
 | Example | Description | API Key | Run |
 |---|---|---|---|
-| **code_to_policy_extractor** | Clean-Architecture linter on PRs + `ci_gate.sh`: the same policy as a CI gate through `mkit eval` exit codes (0 clean / 1 deny / 2 usage) | No | `go run ./code_to_policy_extractor/` |
-| **custom_policy_format** | A user-defined policy DSL compiled to Datalog and loaded via `LoadPolicy` — the documented replacement for the removed Gherkin compiler | No | `go run ./custom_policy_format/` |
-| **config_driven_app** | Declarative YAML config, generics API (`Define[In,Out]`), and provider registry | No | `go run ./config_driven_app/` |
-| **real_llm_gate** | Minimal supervised LLM call with `QuickClient` + `RegisterSupervised`: allowed and policy-denied case | Optional (mock fallback) | `go run ./real_llm_gate/` |
+| **code_to_policy_extractor** | Clean-Architecture linter on PRs + `ci_gate.sh`: the same policy as a CI gate through `mkit eval` exit codes (0 clean / 1 deny / 2 usage) | No | `go run ./integration/code_to_policy_extractor/` |
+| **custom_policy_format** | A user-defined policy DSL compiled to Datalog and loaded via `LoadPolicy` — the documented replacement for the removed Gherkin compiler | No | `go run ./governance/custom_policy_format/` |
+| **config_driven_app** | Declarative YAML config, generics API (`Define[In,Out]`), and provider registry | No | `go run ./integration/config_driven_app/` |
+| **real_llm_gate** | Minimal supervised LLM call with `QuickClient` + `RegisterSupervised`: allowed and policy-denied case | Optional (mock fallback) | `go run ./integration/real_llm_gate/` |
 
 ### 2. Policy & Governance
 
@@ -52,11 +55,11 @@ Zero-trust policy enforcement — the core value prop of manglekit.
 
 | Example | Description | API Key | Run |
 |---|---|---|---|
-| **devops_policy_gate** | CI/CD security gates (Terraform/K8s) + tier semantics (T1 blocks vs T2 advisory, P0.7) + Explainable Deny: structured `PolicyViolationError` and the derivation proof tree | No | `go run ./devops_policy_gate/` |
-| **compliance_proof** | GDPR as tiered Datalog — `AssessPlan` renders `AuditTrail` as machine-checkable proof | No | `go run ./compliance_proof/` |
-| **jailbreak_proof_agent** | T0 taint axiom blocks data exfiltration — mock LLM complies with injection but kernel holds | No | `go run ./jailbreak_proof_agent/` |
-| **verified_reasoning** | Cheap model + symbolic verifier = certified-correct output via verify-retry loop | No | `go run ./verified_reasoning/` |
-| **temporal_compliance** | Experimental temporal reasoning: is an authorization/​fact still valid at the time a transaction occurred? | No | `go run ./temporal_compliance/` |
+| **devops_policy_gate** | CI/CD security gates (Terraform/K8s) + tier semantics (T1 blocks vs T2 advisory, P0.7) + Explainable Deny: structured `PolicyViolationError` and the derivation proof tree | No | `go run ./governance/devops_policy_gate/` |
+| **compliance_proof** | GDPR as tiered Datalog — `AssessPlan` renders `AuditTrail` as machine-checkable proof | No | `go run ./governance/compliance_proof/` |
+| **jailbreak_proof_agent** | T0 taint axiom blocks data exfiltration — mock LLM complies with injection but kernel holds | No | `go run ./governance/jailbreak_proof_agent/` |
+| **verified_reasoning** | Cheap model + symbolic verifier = certified-correct output via verify-retry loop | No | `go run ./governance/verified_reasoning/` |
+| **temporal_compliance** | Experimental temporal reasoning: is an authorization/​fact still valid at the time a transaction occurred? | No | `go run ./knowledge/temporal_compliance/` |
 
 ### 3. Knowledge & Reasoning
 
@@ -64,9 +67,9 @@ Knowledge graphs, vector search, and hybrid RAG patterns.
 
 | Example | Description | API Key | Run |
 |---|---|---|---|
-| **knowledge_graph_reasoning** | Load N-Triples knowledge graphs, define transitive Datalog rules, query with audit trails | No | `go run ./knowledge_graph_reasoning/` |
-| **hybrid_rag** | Multi-tenant RAG with transitive access control and egress tainting | No (mocks) | `go run ./hybrid_rag/` |
-| **silo_storage** | SessionStore (TTL), TransientFactsStore, N-Triples parsing, and Vector Store | No | `go run ./silo_storage/` |
+| **knowledge_graph_reasoning** | Load N-Triples knowledge graphs, define transitive Datalog rules, query with audit trails | No | `go run ./knowledge/knowledge_graph_reasoning/` |
+| **hybrid_rag** | Multi-tenant RAG with transitive access control and egress tainting | No (mocks) | `go run ./knowledge/hybrid_rag/` |
+| **silo_storage** | SessionStore (TTL), TransientFactsStore, N-Triples parsing, and Vector Store | No | `go run ./storage/silo_storage/` |
 
 > **Note:** hybrid_rag's access-control and egress scenarios run on the full
 > `client.Supervise()` pre-check path: `ExecuteByName` recalls memory
@@ -81,12 +84,12 @@ Observe-Orient-Decide-Act loops with entropic steering and self-correction.
 
 | Example | Description | API Key | Run |
 |---|---|---|---|
-| **ooda_document_generator** | Full 5-phase OODA loop with self-correction and Datalog policies | No | `go run ./ooda_document_generator/` |
-| **ooda_east_generation** | `RunOODA` (core) / `x/east.RunOODAEAST` with EAST steering, mixed-precision memory, Teacher-Student retry | No | `go run ./ooda_east_generation/` |
-| **ooda_genkit_flow** | OODA loop exposed as Genkit HTTP flows — `DefineFlow`, `DefineStreamingFlow`, `FlowRegistry` | No (mock Brain) | `go run ./ooda_genkit_flow/` |
-| **route_chaining** | `ROUTE` decision outcome, dynamic action chaining, paradox injection, SteerKB | No | `go run ./route_chaining/` |
-| **skill_learning** | Cross-session skill learning: file-backed `ooda.Memory` (auto-Commit learner, Orient-time Recall) + `ports.ReasoningPort` route learning for `SteerKB` — session 2 needs fewer refinements and takes the learned fast path after a simulated restart | No | `go run ./skill_learning/` |
-| **learn_from_code** | UC-L8 "learn from code" skill: deterministic intent router (LEARN/EVAL/PROMOTE/STATUS) — source tree → signals → induced `x/genes` candidates (advisory T2/T3 only, signed, provenanced), shadow EVAL through the real gate, human-confirmed PROMOTE to T1 that then DENIES (`docs/use-cases/learning.md`) | No | `go run ./learn_from_code/` |
+| **ooda_document_generator** | Full 5-phase OODA loop with self-correction and Datalog policies | No | `go run ./cognition/ooda_document_generator/` |
+| **ooda_east_generation** | `RunOODA` (core) / `x/east.RunOODAEAST` with EAST steering, mixed-precision memory, Teacher-Student retry | No | `go run ./cognition/ooda_east_generation/` |
+| **ooda_genkit_flow** | OODA loop exposed as Genkit HTTP flows — `DefineFlow`, `DefineStreamingFlow`, `FlowRegistry` | No (mock Brain) | `go run ./cognition/ooda_genkit_flow/` |
+| **route_chaining** | `ROUTE` decision outcome, dynamic action chaining, paradox injection, SteerKB | No | `go run ./cognition/route_chaining/` |
+| **skill_learning** | Cross-session skill learning: file-backed `ooda.Memory` (auto-Commit learner, Orient-time Recall) + `ports.ReasoningPort` route learning for `SteerKB` — session 2 needs fewer refinements and takes the learned fast path after a simulated restart | No | `go run ./learning/skill_learning/` |
+| **learn_from_code** | UC-L8 "learn from code" skill: deterministic intent router (LEARN/EVAL/PROMOTE/STATUS) — source tree → signals → induced `x/genes` candidates (advisory T2/T3 only, signed, provenanced), shadow EVAL through the real gate, human-confirmed PROMOTE to T1 that then DENIES (`docs/use-cases/learning.md`) | No | `go run ./learning/learn_from_code/` |
 
 ### 5. Orchestration & Planning
 
@@ -94,8 +97,8 @@ Workflow engines, goal-driven planning, and multi-agent coordination.
 
 | Example | Description | API Key | Run |
 |---|---|---|---|
-| **goal_based_planning** | Datalog-driven action planning with `client.Plan()` and `ExecutePlan()` | No | `go run ./goal_based_planning/` |
-| **multi_agent_research** | Sequential, parallel, and hydrated workflow executors with session resume | No | `go run ./multi_agent_research/` |
+| **goal_based_planning** | Datalog-driven action planning with `client.Plan()` and `ExecutePlan()` | No | `go run ./cognition/goal_based_planning/` |
+| **multi_agent_research** | Sequential, parallel, and hydrated workflow executors with session resume | No | `go run ./integration/multi_agent_research/` |
 
 ### 6. Integration & Production
 
@@ -103,14 +106,14 @@ External system integrations, LLM bridges, and production infrastructure.
 
 | Example | Description | API Key | Run |
 |---|---|---|---|
-| **mcp_tool_integration** | Model Context Protocol server integration with policy-gated tool execution | No | `go run ./mcp_tool_integration/` |
-| **genkit_middleware_showcase** | Genkit middleware (Retry, Fallback, Tool Approval) + Supervised Streaming: pre-check denies BEFORE the first chunk (provider never opened); OUTPUT-rule post-check refuses the assembled stream | Yes | `go run ./genkit_middleware_showcase/` |
-| **session_recovery** | Durable session state persistence and crash recovery | No | `go run ./session_recovery/` |
-| **policy_copilot** | NL→Datalog generation (schema extraction, few-shot, syntax check) + signed packaging: rule → `x/genes` T3 Gene → tamper-checked pool → enforcement only via the policy channel | No (mock LLM) | `go run ./policy_copilot/` |
-| **extractor_bridge** | LLM text→struct extraction — the neuro-symbolic bridge feeding Datalog | No (mock LLM) | `go run ./extractor_bridge/` |
-| **production_resilience** | Circuit breaker (Closed→Open→HalfOpen) + OpenTelemetry tracing + middleware | No | `go run ./production_resilience/` |
-| **persistent_store** | BadgerDB-backed session/knowledge store (`WithSyncWrites(true)` durability) with close/reopen restart-resume | No | `go run ./persistent_store/` |
-| **http_service** | manglekit in a `net/http` server: `/ask` supervised action (403 on deny) + `/admin/reload` hot policy swap — fail-safe: a rejected reload keeps the old policy serving | No | `go run ./http_service/` |
+| **mcp_tool_integration** | Model Context Protocol server integration with policy-gated tool execution | No | `go run ./integration/mcp_tool_integration/` |
+| **genkit_middleware_showcase** | Genkit middleware (Retry, Fallback, Tool Approval) + Supervised Streaming: pre-check denies BEFORE the first chunk (provider never opened); OUTPUT-rule post-check refuses the assembled stream | Yes | `go run ./cognition/genkit_middleware_showcase/` |
+| **session_recovery** | Durable session state persistence and crash recovery | No | `go run ./storage/session_recovery/` |
+| **policy_copilot** | NL→Datalog generation (schema extraction, few-shot, syntax check) + signed packaging: rule → `x/genes` T3 Gene → tamper-checked pool → enforcement only via the policy channel | No (mock LLM) | `go run ./learning/policy_copilot/` |
+| **extractor_bridge** | LLM text→struct extraction — the neuro-symbolic bridge feeding Datalog | No (mock LLM) | `go run ./knowledge/extractor_bridge/` |
+| **production_resilience** | Circuit breaker (Closed→Open→HalfOpen) + OpenTelemetry tracing + middleware | No | `go run ./integration/production_resilience/` |
+| **persistent_store** | BadgerDB-backed session/knowledge store (`WithSyncWrites(true)` durability) with close/reopen restart-resume | No | `go run ./storage/persistent_store/` |
+| **http_service** | manglekit in a `net/http` server: `/ask` supervised action (403 on deny) + `/admin/reload` hot policy swap — fail-safe: a rejected reload keeps the old policy serving | No | `go run ./integration/http_service/` |
 
 ## Proof points
 
@@ -229,34 +232,41 @@ All examples include tests. No external API keys required for tests — mocks ar
 
 ## Repo Structure
 
-```
-manglekit-examples/
-  code_to_policy_extractor/    -- Dynamic Architecture Linter
-  compliance_proof/            -- GDPR tiered Datalog with audit proof
-  config_driven_app/           -- YAML config + generics API + provider registry  ★
-  devops_policy_gate/          -- CI/CD Security Gates
-  extractor_bridge/            -- LLM text→struct neuro-symbolic bridge          ★
-  genkit_middleware_showcase/  -- Genkit middleware composition
-  custom_policy_format/         -- user DSL → Datalog via LoadPolicy (ext point)  ★
-  goal_based_planning/         -- Datalog-driven action planning
-  hybrid_rag/                  -- Multi-Tenant RAG with access control
-  jailbreak_proof_agent/       -- T0 taint axiom blocks exfiltration
-  knowledge_graph_reasoning/   -- N-Triples knowledge graph reasoning
-  mcp_tool_integration/        -- Model Context Protocol integration
-  multi_agent_research/        -- Multi-agent workflow orchestration
-  ooda_document_generator/     -- Full 5-phase OODA loop
-  ooda_east_generation/        -- RunOODA/RunOODAEAST with EAST steering
-  ooda_genkit_flow/            -- OODA as Genkit HTTP flow + streaming           ★
-  policy_copilot/              -- NL→Datalog rule generation                     ★
-  production_resilience/       -- Circuit breaker + OpenTelemetry + middleware    ★
-  route_chaining/              -- ROUTE decision + paradox injection             ★
-  session_recovery/            -- Durable state persistence
-  silo_storage/                -- SessionStore, TransientFacts, Vector Store
-  temporal_compliance/          -- temporal: was a fact valid at time X?        ★
-  verified_reasoning/          -- Symbolic verify-retry loop
-  real_llm_gate/               -- Minimal supervised LLM call (QuickClient)     ★
-  persistent_store/            -- BadgerDB durable session/knowledge store     ★
-  http_service/                -- manglekit behind a net/http /ask endpoint    ★
+```manglekit-examples/
+  governance/            -- policy gate mechanics
+    devops_policy_gate/  -- CI/CD gates + T1/T2 tier split + Explain proofs
+    compliance_proof/    -- GDPR tiered Datalog with audit proof
+    jailbreak_proof_agent/ -- T0 taint axiom blocks exfiltration
+    verified_reasoning/  -- symbolic verify-retry certification loop
+    custom_policy_format/ -- user DSL → Datalog via LoadPolicy
+  cognition/             -- OODA / EAST loops (x/ extension family)
+    ooda_east_generation/ -- RunOODA/RunOODAEAST, EAST steering
+    ooda_document_generator/ -- full 5-phase loop
+    ooda_genkit_flow/    -- OODA as Genkit flow + streaming
+    route_chaining/      -- ROUTE decision + paradox injection
+    genkit_middleware_showcase/ -- middleware + supervised streaming
+    goal_based_planning/ -- Datalog-driven action planning
+  learning/              -- learn-from-X, human-gated promotion
+    learn_from_code/     -- tree LEARN + ASK + dogfood pool + CI gate
+    skill_learning/      -- cross-session runtime learning (ooda.Memory)
+    policy_copilot/      -- NL→Datalog + signed genes
+  knowledge/             -- facts, retrieval, time
+    knowledge_graph_reasoning/ -- N-Triples graph reasoning
+    hybrid_rag/          -- multi-tenant RAG with access control
+    temporal_compliance/ -- validity-at-time reasoning
+    extractor_bridge/    -- LLM text→struct bridge
+  storage/               -- The Silo
+    silo_storage/        -- session/transient/vector/MEB subsystems
+    persistent_store/    -- BadgerDB durable store, restart-resume
+    session_recovery/    -- durable state persistence & recovery
+  integration/           -- real-world wiring
+    http_service/        -- net/http /ask + /admin/reload
+    mcp_tool_integration/ -- MCP tools behind the gate
+    code_to_policy_extractor/ -- arch-linter + ci_gate.sh exit codes
+    config_driven_app/   -- YAML config + generics + provider registry
+    production_resilience/ -- circuit breaker + OTel + middleware
+    real_llm_gate/       -- minimal supervised LLM call
+    multi_agent_research/ -- workflow orchestration
 ```
 
 Each example has its own `package main` and can be run independently. ★ = new in this release.

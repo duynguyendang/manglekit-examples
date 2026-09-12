@@ -41,6 +41,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -124,19 +125,19 @@ func runLearn(ctx context.Context, out io.Writer, cfg *config) ([]genes.Gene, er
 	if len(roots) == 0 {
 		roots = []string{"."}
 	}
-	files, err := resolveLearnPaths(cfg.learn)
+	targets, err := resolveLearnPaths(cfg.learn)
 	if err != nil {
 		return nil, fmt.Errorf("LEARN failed closed (nothing written): %w", err)
 	}
 	fmt.Fprintf(out, "scanning %d .go file(s) under %s (excluded: tests, testdata, vendor, .git)\n",
-		len(files), strings.Join(roots, " "))
-	ex, err := extractSignals(files)
+		len(targets), strings.Join(roots, " "))
+	ex, err := extractSignals(targets)
 	if err != nil {
 		return nil, fmt.Errorf("extraction failed (nothing written): %w", err)
 	}
 	if len(ex.Keys) == 0 {
 		// A clean tree is an HONEST answer, not a failure: nothing to write.
-		fmt.Fprintf(out, "no learnable signals in %d file(s) — pool unchanged\n", len(files))
+		fmt.Fprintf(out, "no learnable signals in %d file(s) — pool unchanged\n", len(targets))
 		return nil, nil
 	}
 	fmt.Fprintf(out, "extracted %d signal(s) from %d signal-bearing file(s) [%s]: %s\n",
@@ -346,33 +347,27 @@ func runPromote(ctx context.Context, out io.Writer, cfg *config) error {
 	cfgCopy := *cfg
 	cfgCopy.confirm = true
 	if len(cfgCopy.signals) == 0 && cfgCopy.input == "" {
-		if files := filesFromSource(g.Source); len(files) > 0 {
-			ex, err := extractSignals(files)
-			if err != nil {
-				fmt.Fprintf(out, "note: re-eval skipped (original sources unreadable): %v\n", err)
-				return nil
-			}
-			cfgCopy.signals = ex.Keys
-		}
+		// Re-evaluate the lesson itself: replay the signal keys the gene's
+		// rules react to (path-free, proven by the rules — location-stable
+		// like the pool). Source stays human provenance for the reviewer.
+		cfgCopy.signals = ruleSignalKeys(g.Rules)
 	}
 	fmt.Fprintln(out, "\n--- re-EVAL with --confirm (policy now contains a T1 gene) ---")
 	return runEval(ctx, out, &cfgCopy)
 }
 
-// filesFromSource parses the file list embedded by induce ("learn_from_code@<sha8> f1 f2 ...").
-func filesFromSource(source string) []string {
-	i := strings.Index(source, " ")
-	if i < 0 {
-		return nil
+// codeSignalKeyRE extracts the signal keys a compiled rule reacts to.
+var codeSignalKeyRE = regexp.MustCompile(`code_signal\("[^"]*",\s*"([^"]+)"\)`)
+
+// ruleSignalKeys replays a gene's own signal vocabulary — the re-eval after
+// promotion proves exactly what the lesson keys on, independent of file
+// locations.
+func ruleSignalKeys(rules string) []string {
+	var keys []string
+	for _, m := range codeSignalKeyRE.FindAllStringSubmatch(rules, -1) {
+		keys = append(keys, m[1])
 	}
-	var files []string
-	for _, f := range strings.Fields(source[i:]) {
-		if strings.HasPrefix(f, "learn_from_code@") {
-			continue
-		}
-		files = append(files, f)
-	}
-	return files
+	return keys
 }
 
 // =========================================================================
@@ -465,7 +460,11 @@ func evalSignals(cfg *config) ([]string, error) {
 		return cfg.signals, nil
 	}
 	if cfg.input != "" {
-		ex, err := extractSignals([]string{cfg.input})
+		targets, err := resolveLearnPaths([]string{cfg.input})
+		if err != nil {
+			return nil, err
+		}
+		ex, err := extractSignals(targets)
 		if err != nil {
 			return nil, err
 		}

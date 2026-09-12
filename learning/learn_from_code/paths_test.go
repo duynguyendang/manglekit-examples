@@ -19,15 +19,10 @@ func writeGo(t *testing.T, root, rel string) string {
 	return p
 }
 
-func relSlash(t *testing.T, root string, files []string) []string {
-	t.Helper()
+func displays(files []learnTarget) []string {
 	var out []string
 	for _, f := range files {
-		r, err := filepath.Rel(root, f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		out = append(out, filepath.ToSlash(r))
+		out = append(out, f.Display)
 	}
 	return out
 }
@@ -48,8 +43,14 @@ func TestResolveLearnPathsWalkAndExclusions(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"a.go", "pkg/deep.go", "pkg/sub/c.go"}
-	if strings.Join(relSlash(t, root, got), ",") != strings.Join(want, ",") {
-		t.Errorf("walk = %v, want %v", relSlash(t, root, got), want)
+	// Display paths are ROOT-RELATIVE — provenance never carries ../ churn.
+	if strings.Join(displays(got), ",") != strings.Join(want, ",") {
+		t.Errorf("walk displays = %v, want %v", displays(got), want)
+	}
+	for _, f := range got {
+		if !strings.HasPrefix(strings.ReplaceAll(f.Path, string(filepath.Separator), "/"), filepath.ToSlash(root)+"/") {
+			t.Errorf("Path %q not under root %q", f.Path, root)
+		}
 	}
 }
 
@@ -61,8 +62,8 @@ func TestResolveLearnPathsExplicitFileBypassesWalkExclusions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0] != filepath.ToSlash(p) {
-		t.Fatalf("explicit file must pass through, got %v", got)
+	if len(got) != 1 || got[0].Display != filepath.ToSlash(p) {
+		t.Fatalf("explicit file must pass through as-is, got %v", displays(got))
 	}
 }
 
@@ -75,7 +76,7 @@ func TestResolveLearnPathsUnionSortedDeduped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rel := relSlash(t, root, got)
+	rel := displays(got)
 	if len(rel) != 2 || rel[0] != "a.go" || rel[1] != "z.go" {
 		t.Fatalf("union = %v, want sorted [a.go z.go] deduped", rel)
 	}
@@ -107,15 +108,15 @@ func TestResolveLearnPathsDefaultCwd(t *testing.T) {
 	}
 	var hasMain, hasTest bool
 	for _, f := range got {
-		base := filepath.Base(f)
+		base := filepath.Base(f.Display)
 		if base == "main.go" {
 			hasMain = true
 		}
 		if strings.HasSuffix(base, "_test.go") {
 			hasTest = true
 		}
-		if strings.Contains(f, "testdata/") {
-			t.Errorf("testdata leaked into walk: %s", f)
+		if strings.Contains(f.Display, "testdata/") {
+			t.Errorf("testdata leaked into walk: %s", f.Display)
 		}
 	}
 	if !hasMain {

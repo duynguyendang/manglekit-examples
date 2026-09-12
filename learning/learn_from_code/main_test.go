@@ -43,7 +43,7 @@ func TestIntentRouter(t *testing.T) {
 }
 
 func TestExtractSignalsDeterministic(t *testing.T) {
-	ex, err := extractSignals([]string{snippet})
+	ex, err := extractSignals(mustTargets(t, snippet))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestExtractSignalsDeterministic(t *testing.T) {
 	if len(ex.SHAC8()) != 8 {
 		t.Errorf("bad sha8 %q", ex.SHAC8())
 	}
-	clean, err := extractSignals([]string{"./testdata/clean.go"})
+	clean, err := extractSignals(mustTargets(t, "./testdata/clean.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,8 +253,17 @@ func TestUnknownFlagRejected(t *testing.T) {
 	}
 }
 
+func mustTargets(t *testing.T, paths ...string) []learnTarget {
+	t.Helper()
+	out, err := resolveLearnPaths(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 func TestExtractMethodFormDestructive(t *testing.T) {
-	ex, err := extractSignals([]string{"./testdata/destructive_methods.go"})
+	ex, err := extractSignals(mustTargets(t, "./testdata/destructive_methods.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,11 +273,11 @@ func TestExtractMethodFormDestructive(t *testing.T) {
 }
 
 func TestExtractIdentityScopedToSignalFiles(t *testing.T) {
-	withClean, err := extractSignals([]string{"./testdata/clean.go", snippet})
+	withClean, err := extractSignals(mustTargets(t, "./testdata/clean.go", snippet))
 	if err != nil {
 		t.Fatal(err)
 	}
-	only, err := extractSignals([]string{snippet})
+	only, err := extractSignals(mustTargets(t, snippet))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +290,7 @@ func TestExtractIdentityScopedToSignalFiles(t *testing.T) {
 }
 
 func TestExtractSingleImportForm(t *testing.T) {
-	ex, err := extractSignals([]string{"./testdata/single_import.go"})
+	ex, err := extractSignals(mustTargets(t, "./testdata/single_import.go"))
 	if err != nil {
 		t.Fatal(err)
 	}

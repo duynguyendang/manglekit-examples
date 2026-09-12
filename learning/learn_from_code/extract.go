@@ -63,16 +63,16 @@ var signalSeverity = map[string]int{
 	"hardcoded_secret": 2, "direct_db_access": 3,
 }
 
-func extractSignals(paths []string) (extracted, error) {
+func extractSignals(paths []learnTarget) (extracted, error) {
 	seen := map[string]bool{}
 	var keys []string
 	var h = sha256.New()
 
 	matched := map[string]bool{}
-	for _, p := range paths {
-		src, err := os.ReadFile(p)
+	for _, t := range paths {
+		src, err := os.ReadFile(t.Path)
 		if err != nil {
-			return extracted{}, fmt.Errorf("read %s: %w", p, err)
+			return extracted{}, fmt.Errorf("read %s: %w", t.Path, err)
 		}
 		text := string(src)
 		hit := false
@@ -86,8 +86,8 @@ func extractSignals(paths []string) (extracted, error) {
 			}
 		}
 		if hit {
-			matched[p] = true
-			fmt.Fprintf(h, "file:%s\ncontent:%x\n", p, sha256.Sum256(src))
+			matched[t.Display] = true
+			fmt.Fprintf(h, "file:%s\ncontent:%x\n", t.Display, sha256.Sum256(src))
 		}
 	}
 	sort.Strings(keys)

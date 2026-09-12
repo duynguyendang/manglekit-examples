@@ -7,7 +7,7 @@
 # so this script is a thin wrapper — no duplicate find logic, portable.
 #
 # Usage: regenerate.sh [KERNEL_DIR] [OUT_DIR]
-#   defaults: ../../manglekit  ./dogfood   (sibling mangle-project layout)
+#   defaults: ../../../manglekit  ./dogfood   (sibling mangle-project layout)
 set -euo pipefail
 cd "$(dirname "$0")/.."
-go run . --learn "${1:-../../manglekit}" --out "${2:-dogfood}"
+go run . --learn "${1:-../../../manglekit}" --out "${2:-dogfood}"

@@ -20,7 +20,7 @@ go run . --emit-policy "$POLICY"
 
 # Build mkit from inside the kernel module (sibling layout; override with
 # MANGLEKIT_DIR). The examples module does not carry the CLI's transitive deps.
-KERNEL_DIR="${MANGLEKIT_DIR:-../../manglekit}"
+KERNEL_DIR="${MANGLEKIT_DIR:-../../../manglekit}"
 MKIT="$(mktemp -d)/mkit"
 go build -C "$KERNEL_DIR" -o "$MKIT" ./cmd/mkit
 

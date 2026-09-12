@@ -198,7 +198,7 @@ func kernelModuleDir(t *testing.T) string {
 	if env := os.Getenv("MANGLEKIT_DIR"); env != "" {
 		return env
 	}
-	dir, err := filepath.Abs(filepath.Join(exampleDir(), "..", "..", "manglekit"))
+	dir, err := filepath.Abs(filepath.Join(exampleDir(), ".", "..", "..", "manglekit"))
 	if err != nil {
 		t.Fatal(err)
 	}

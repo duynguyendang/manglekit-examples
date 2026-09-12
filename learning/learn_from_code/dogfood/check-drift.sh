@@ -10,7 +10,7 @@ if [ ! -f dogfood/genes.yaml ]; then
 fi
 FRESH="$(mktemp -d)"
 trap 'rm -rf "$FRESH"' EXIT
-bash dogfood/regenerate.sh "${1:-../../manglekit}" "$FRESH" >/dev/null
+bash dogfood/regenerate.sh "${1:-../../../manglekit}" "$FRESH" >/dev/null
 if ! diff -u dogfood/genes.yaml "$FRESH/genes.yaml"; then
     echo "POLICY POOL DRIFT: kernel code signals changed without a pool review."
     echo "Fix: ./dogfood/regenerate.sh, review the diff, commit the updated pool."
