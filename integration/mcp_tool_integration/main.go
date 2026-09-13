@@ -1,3 +1,5 @@
+// mcp_tool_integration answers: Can external MCP tools bypass the policy? (UC-I1)
+
 package main
 
 import (

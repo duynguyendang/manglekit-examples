@@ -1,3 +1,4 @@
+// config_driven_app answers: Can skills ship as YAML config without touching code? (UC-F3)
 // config_driven_app demonstrates declarative YAML configuration,
 // the generics API (Define[In,Out]), and provider registry.
 //

@@ -1,3 +1,4 @@
+// persistent_store answers: Does the agent's work survive a crash or restart? (UC-I3, UC-I7)
 // persistent_store demonstrates a durable, BadgerDB-backed session/knowledge
 // store with restart-resume: the store is closed and reopened within the same
 // run, and the checkpointed workflow state survives.

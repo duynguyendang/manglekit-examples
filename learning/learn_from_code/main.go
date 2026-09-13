@@ -1,3 +1,4 @@
+// learn_from_code answers: Can the repo learn policy from its own code, answer questions while coding, and only tighten through human promotion? (UC-L8)
 // Package main implements the learn_from_code example: the UC-L8
 // "learn from code" skill (intent-routed entry point conceptually named
 // `manglekit`). It shows that code-derived policy learning fits entirely in

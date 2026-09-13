@@ -1,3 +1,4 @@
+// verified_reasoning answers: Can a cheap model be trusted to be correct — because a symbolic layer certifies every answer? (UC-G4)
 // verified_reasoning demonstrates a cheap model + symbolic verifier
 // achieving certified-correct output.
 //

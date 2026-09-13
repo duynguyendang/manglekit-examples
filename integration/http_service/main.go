@@ -1,3 +1,4 @@
+// http_service answers: Can the gate run inside a real service — hot-updating policy and staying up under failure? (UC-I6, UC-I8)
 // http_service embeds manglekit in a plain net/http Go service: a /ask
 // endpoint whose handler executes a supervised LLM action via
 // ExecuteByName — plus the production wrapper patterns (resilience.go,

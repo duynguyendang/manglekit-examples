@@ -1,3 +1,4 @@
+// skill_learning answers: Do agents get better across sessions without the kernel deciding anything? (UC-L1, UC-L2)
 // skill_learning demonstrates CROSS-SESSION skill learning on the OODA
 // loop, using only public extension points (no kernel changes):
 //

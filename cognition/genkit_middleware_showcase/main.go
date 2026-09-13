@@ -1,3 +1,5 @@
+// genkit_middleware_showcase answers: Does anything unverified stream out — and can loops run as services? (UC-I2, UC-C3)
+
 package main
 
 import (

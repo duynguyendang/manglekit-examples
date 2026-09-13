@@ -1,3 +1,4 @@
+// compliance_proof answers: Can regulators be shown, with proof, why each operation was allowed or denied? (UC-G2)
 // compliance_proof demonstrates machine-checkable GDPR compliance using
 // tiered Datalog. Each case runs AssessPlan, then renders the AuditTrail
 // as a human-readable proof showing which rules fired, their tier, and

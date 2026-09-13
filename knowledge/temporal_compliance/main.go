@@ -1,3 +1,4 @@
+// temporal_compliance answers: Was authorization valid at the time the transaction actually occurred? (UC-G5)
 // temporal_compliance demonstrates manglekit's experimental temporal reasoning
 // surface: facts carry validity windows, and a compliance question becomes
 // "was this fact in effect at the time that matters?".

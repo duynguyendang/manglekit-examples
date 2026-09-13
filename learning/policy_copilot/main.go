@@ -1,3 +1,4 @@
+// policy_copilot answers: Can non-Datalog users author policy in English — and free text pass the same gates — with every rule signed and reviewable? (UC-I4, UC-I5)
 // policy_copilot demonstrates the NL→Datalog policy generator:
 //
 //  - Schema extraction: reflects on Go struct fields with `mangle` tags

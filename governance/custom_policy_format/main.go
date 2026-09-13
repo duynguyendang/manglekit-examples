@@ -1,3 +1,4 @@
+// custom_policy_format answers: Can an existing policy DSL feed the same gate with zero engine changes? (UC-F2)
 // custom_policy_format demonstrates the policy-loader extension point: an
 // application-defined policy DSL is compiled to Datalog in user code and
 // loaded through LoadPolicy, without any compilation support inside the

@@ -1,3 +1,4 @@
+// code_to_policy_extractor answers: Can CI catch architecture violations with the same gate that guards runtime? (UC-F1)
 // code_to_policy_extractor is a dynamic architecture linter: Clean
 // Architecture import/naming rules are expressed as Datalog and enforced on
 // pull requests — in-process through the supervised SDK path, and as a CI

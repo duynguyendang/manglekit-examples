@@ -1,3 +1,4 @@
+// devops_policy_gate answers: Dangerous infra ops blocked — and WHY? (UC-G1)
 // devops_policy_gate demonstrates infrastructure governance with Datalog
 // security gates: numeric replica limits, business-hour restrictions on
 // destructive operations, and approval/permission flags.

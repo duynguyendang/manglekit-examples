@@ -1,3 +1,4 @@
+// hybrid_rag answers: Does tenant data stay in its tenant once RAG joins the pipeline? (UC-K2)
 // hybrid_rag demonstrates four policy-gated RAG features against a mock
 // knowledge base:
 //   1. Transitive access control (group → project → doc).

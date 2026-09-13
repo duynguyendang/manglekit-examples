@@ -1,3 +1,4 @@
+// jailbreak_proof_agent answers: Can prompt injection exfiltrate data through the gate? (UC-G3)
 // jailbreak_proof_agent demonstrates that a prompt-injection payload
 // cannot exfiltrate data when the kernel enforces a T0 taint axiom.
 //

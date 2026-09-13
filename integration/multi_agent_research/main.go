@@ -1,3 +1,4 @@
+// multi_agent_research answers: Do long multi-agent jobs finish when they can be interrupted mid-run? (UC-O2)
 // multi_agent_research demonstrates the Multi-Agent Runtime subsystem
 // (`manglekit/multiagent/`):
 //   - AgentSystem, WorkflowExecutor, ParallelWorkflowExecutor

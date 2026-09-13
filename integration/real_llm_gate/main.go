@@ -1,3 +1,4 @@
+// real_llm_gate answers: What is the smallest real LLM call that still passes the gate? (UC-F4)
 // real_llm_gate is the minimal "hello world" of supervised LLM calls:
 // one action, one policy, two outcomes (allowed + policy-denied).
 //
