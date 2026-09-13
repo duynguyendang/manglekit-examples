@@ -1,6 +1,8 @@
 // http_service embeds manglekit in a plain net/http Go service: a /ask
 // endpoint whose handler executes a supervised LLM action via
-// ExecuteByName. Enforcement lives in the kernel — the handler just maps
+// ExecuteByName — plus the production wrapper patterns (resilience.go,
+// formerly the production_resilience example: circuit breaker + OTel
+// tracer around the same supervised stack). Enforcement lives in the kernel — the handler just maps
 // kernel outcomes onto HTTP statuses:
 //
 //	PROCEED                    -> 200 {"answer": ...}
@@ -163,6 +165,11 @@ func main() {
 		log.Fatalf("build server: %v", err)
 	}
 	defer srv.Shutdown(ctx)
+
+	// Production patterns first (circuit breaker + tracing), then serve.
+	if err := demoResilience(ctx); err != nil {
+		log.Fatalf("resilience section: %v", err)
+	}
 
 	addr := ":8080"
 	fmt.Printf("http_service listening on %s\n", addr)

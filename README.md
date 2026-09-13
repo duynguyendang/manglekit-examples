@@ -33,6 +33,12 @@ export GOOGLE_API_KEY=your-key
 
 ## Learning Path
 
+**Quick tour (one per idea):** `real_llm_gate` → `devops_policy_gate` →
+`ooda_east_generation` → `learn_from_code` → `http_service`.
+Packages marked **deep dive** below are specialist tours — read the foundations
+first. `temporal_compliance` is experimental (opt-in).
+
+
 Examples live under six domain folders — `governance/`, `cognition/`,
 `learning/`, `knowledge/`, `storage/`, `integration/` — one runnable package
 each, with names kept stable since 2026-09. Tables below are ordered by
@@ -104,13 +110,10 @@ External system integrations, LLM bridges, and production infrastructure.
 | Example | Description | API Key | Run |
 |---|---|---|---|
 | **mcp_tool_integration** | Model Context Protocol server integration with policy-gated tool execution | No | `go run ./integration/mcp_tool_integration/` |
-| **genkit_middleware_showcase** | Genkit middleware (Retry, Fallback, Tool Approval) + Supervised Streaming + OODA-as-Genkit-flows (`OODAFlow`, `FlowRegistry`, ex `genkit_middleware_showcase`): pre-check denies BEFORE the first chunk (provider never opened); OUTPUT-rule post-check refuses the assembled stream | Yes | `go run ./cognition/genkit_middleware_showcase/` |
-| **session_recovery** | Durable session state persistence and crash recovery | No | `go run ./storage/session_recovery/` |
-| **policy_copilot** | NL→Datalog generation (schema extraction, few-shot, syntax check) + signed packaging: rule → `x/genes` T3 Gene → tamper-checked pool → enforcement only via the policy channel | No (mock LLM) | `go run ./learning/policy_copilot/` |
-| **extractor_bridge** | LLM text→struct extraction — the neuro-symbolic bridge feeding Datalog | No (mock LLM) | `go run ./knowledge/extractor_bridge/` |
-| **production_resilience** | Circuit breaker (Closed→Open→HalfOpen) + OpenTelemetry tracing + middleware | No | `go run ./integration/production_resilience/` |
-| **persistent_store** | BadgerDB-backed session/knowledge store (`WithSyncWrites(true)` durability) with close/reopen restart-resume | No | `go run ./storage/persistent_store/` |
-| **http_service** | manglekit in a `net/http` server: `/ask` supervised action (403 on deny) + `/admin/reload` hot policy swap — fail-safe: a rejected reload keeps the old policy serving | No | `go run ./integration/http_service/` |
+| **genkit_middleware_showcase** | Genkit middleware (Retry, Fallback, Tool Approval) + Supervised Streaming + OODA-as-Genkit-flows (`OODAFlow`, `FlowRegistry`, ex `ooda_genkit_flow`): pre-check denies BEFORE the first chunk (provider never opened); OUTPUT-rule post-check refuses the assembled stream | Yes | `go run ./cognition/genkit_middleware_showcase/` |
+| **policy_copilot** | NL→Datalog generation + signed `x/genes` packaging (tamper-checked pool, policy-channel enforcement) + text→struct extraction bridge (ex `extractor_bridge`) | No (mock LLM) | `go run ./learning/policy_copilot/` |
+| **persistent_store** | Durable state tour: BadgerDB StateProvider (`WithSyncWrites(true)`, close/reopen restart-resume) + in-memory checkpoint/hydrate & crash simulation (ex `session_recovery`) | No | `go run ./storage/persistent_store/` |
+| **http_service** | Production wiring tour: `/ask` supervised action (403 on deny) + `/admin/reload` fail-safe hot policy swap + circuit breaker (Closed→Open→HalfOpen) & OTel tracer around the same stack (ex `production_resilience`) | No | `go run ./integration/http_service/` |
 
 ## Proof points
 
@@ -131,7 +134,7 @@ What this suite demonstrates — and where you can watch it fail closed:
 | Feature | Package | Examples |
 |---|---|---|
 | Datalog policy engine | `core.Evaluator` | All examples |
-| Zero-trust supervisor | `client.Supervise()` → `client.ExecuteByName()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning, session_recovery, config_driven_app |
+| Zero-trust supervisor | `client.Supervise()` → `client.ExecuteByName()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning, persistent_store, config_driven_app |
 | Assess (policy evaluation) | `Engine().Assess()` | custom_policy_format, ooda_east_generation, config_driven_app, knowledge_graph_reasoning |
 | AssessPlan (pure policy-decision) | `Engine().AssessPlan()` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_east_generation, jailbreak_proof_agent |
 | AuditTrail rendering | `core.AuditTrail` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_east_generation |
@@ -163,8 +166,7 @@ What this suite demonstrates — and where you can watch it fail closed:
 | Learn-from-code skill (UC-L8): intent router + `x/genes` induction/promotion | `x/genes` (`Gene`/`Pool`/`Compile`/`ApplyTo`), `sdk.Client` supervised EVAL | learn_from_code |
 | MCP integration | `adapters/mcp` | mcp_tool_integration |
 | Genkit middleware | `adapters/ai` | genkit_middleware_showcase, real_llm_gate |
-| Session state recovery | `core.StateProvider` | session_recovery |
-| Durable state (checkpoint/hydrate) | `core.SessionState` | session_recovery, multi_agent_research |
+| Session state recovery (checkpoint/hydrate) | `core.StateProvider`, `core.SessionState` | persistent_store, multi_agent_research |
 | Multi-agent runtime | `multiagent.AgentSystem` | multi_agent_research |
 | Workflow executors (sequential/parallel/hydrated) | `multiagent.WorkflowExecutor` | multi_agent_research |
 | Condition evaluation (Datalog) | `AgentSystem.EvaluateCondition()` | multi_agent_research |
@@ -175,15 +177,15 @@ What this suite demonstrates — and where you can watch it fail closed:
 | Declarative YAML config | `config.Load()` / `sdk.WithConfig()` | config_driven_app |
 | Provider registry | `sdk.RegisterProvider()` / `sdk.WithProviderConfig()` | config_driven_app |
 | NL→Datalog policy copilot | `sdk.NewPolicyGenerator()` | policy_copilot |
-| Schema extraction (mangle tags) | `extractor.New()` / `Generator.extractSchema()` | policy_copilot, extractor_bridge |
-| Text→struct extraction | `adapters/extractor` | extractor_bridge |
-| Circuit breaker | `adapters/resilience.CircuitBreaker` | production_resilience |
-| OpenTelemetry tracing | `sdk.WithStdoutTracer()` | production_resilience |
+| Schema extraction (mangle tags) | `Generator.extractSchema()` | policy_copilot |
+| Text→struct extraction | `adapters/extractor` | policy_copilot (extractor section) |
+| Circuit breaker | `adapters/resilience.CircuitBreaker` | http_service (resilience section) |
+| OpenTelemetry tracing | `sdk.WithStdoutTracer()` | http_service (resilience section) |
 | Scenario runner (BDD tests) | `scenario.Run()` | jailbreak_proof_agent |
 | Struct → Datalog (Zero-Config Reflection) | `mangle` struct tags | code_to_policy_extractor, hybrid_rag, policy_copilot |
 | QuickClient / RegisterSupervised | `manglekit.QuickClient` / `Client.RegisterSupervised` | real_llm_gate, http_service |
 | cwd-safe fixture loading | `manglekit.MustReadFile` | hybrid_rag, compliance_proof, ooda_east_generation, verified_reasoning, real_llm_gate, http_service |
-| Test doubles (mocks) | `manglekit/testutil` (MockLLM, DeterministicEmbedder, InMemoryStateProvider, WorkflowSessionStore) | hybrid_rag, silo_storage, session_recovery, multi_agent_research, real_llm_gate, http_service |
+| Test doubles (mocks) | `manglekit/testutil` (MockLLM, DeterministicEmbedder, InMemoryStateProvider, WorkflowSessionStore) | hybrid_rag, silo_storage, persistent_store, multi_agent_research, real_llm_gate, http_service |
 | Durable BadgerDB state | `WithSyncWrites(true)` + batch fact writes | persistent_store |
 
 ## Behavior notes
@@ -243,22 +245,19 @@ All examples include tests. No external API keys required for tests — mocks ar
   learning/              -- learn-from-X, human-gated promotion
     learn_from_code/     -- tree LEARN + ASK + dogfood pool + CI gate
     skill_learning/      -- cross-session runtime learning (ooda.Memory)
-    policy_copilot/      -- NL→Datalog + signed genes
+    policy_copilot/      -- NL→Datalog + signed genes + text→struct bridge
   knowledge/             -- facts, retrieval, time
     knowledge_graph_reasoning/ -- N-Triples graph reasoning
     hybrid_rag/          -- multi-tenant RAG with access control
-    temporal_compliance/ -- validity-at-time reasoning
-    extractor_bridge/    -- LLM text→struct bridge
+    temporal_compliance/ -- validity-at-time reasoning (experimental)
   storage/               -- The Silo
     silo_storage/        -- session/transient/vector/MEB subsystems
-    persistent_store/    -- BadgerDB durable store, restart-resume
-    session_recovery/    -- durable state persistence & recovery
+    persistent_store/    -- durable store + checkpoint/hydrate recovery tour
   integration/           -- real-world wiring
-    http_service/        -- net/http /ask + /admin/reload
+    http_service/        -- /ask + hot reload + circuit breaker + OTel
     mcp_tool_integration/ -- MCP tools behind the gate
     code_to_policy_extractor/ -- arch-linter + ci_gate.sh exit codes
     config_driven_app/   -- YAML config + generics + provider registry
-    production_resilience/ -- circuit breaker + OTel + middleware
     real_llm_gate/       -- minimal supervised LLM call
     multi_agent_research/ -- workflow orchestration
 ```

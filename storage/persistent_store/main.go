@@ -265,4 +265,8 @@ func main() {
 	if err := Run(dir); err != nil {
 		log.Fatalf("persistent_store failed: %v", err)
 	}
+	ctx := context.Background()
+	if err := demoRecovery(ctx); err != nil {
+		log.Fatalf("recovery section failed: %v", err)
+	}
 }

@@ -11,7 +11,7 @@ import (
 )
 
 func TestCircuitBreaker_TripAfterThreshold(t *testing.T) {
-	action := &flakyAction{maxFails: 3}
+	action := &resilFlakyAction{maxFails: 3}
 	cb := resilience.NewCircuitBreaker(action, resilience.CircuitBreakerConfig{
 		FailureThreshold: 3,
 		ResetTimeout:     1 * time.Hour, // long enough that the circuit stays open
@@ -34,7 +34,7 @@ func TestCircuitBreaker_TripAfterThreshold(t *testing.T) {
 }
 
 func TestCircuitBreaker_RecoveryAfterReset(t *testing.T) {
-	action := &flakyAction{maxFails: 2}
+	action := &resilFlakyAction{maxFails: 2}
 	cb := resilience.NewCircuitBreaker(action, resilience.CircuitBreakerConfig{
 		FailureThreshold: 2,
 		ResetTimeout:     10 * time.Millisecond, // short timeout for test

@@ -14,6 +14,10 @@
 //    is applied to a client ONLY through the policy channel — enforcement of
 //    machine-generated rules always carries an auditable origin.
 //
+//  - Text→struct extraction (extractor.go, merged from the extractor_bridge
+//    example): free text → LLM schema extraction → mangle-tagged facts →
+//    Datalog assessment — the full neuro-symbolic loop in one package.
+//
 // The mock LLM returns a deterministic valid Datalog rule.
 // With GOOGLE_API_KEY set, a real Genkit model is used instead.
 //
@@ -211,6 +215,11 @@ func main() {
 		if err := demoGeneLifecycle(ctx, p.nl, rule); err != nil {
 			fmt.Printf("  gene lifecycle failed: %v\n", err)
 		}
+	}
+
+	fmt.Println("=== Text → struct → Datalog (extractor section) ===")
+	if err := demoExtraction(ctx); err != nil {
+		log.Fatalf("extractor section: %v", err)
 	}
 
 	fmt.Println("Done.")

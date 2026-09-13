@@ -1,10 +1,14 @@
+// recovery.go — checkpoint/hydrate over an in-memory StateProvider (merged from
+// session_recovery, 2026-09-13). Complements BadgerStateProvider above:
+// same core.StateProvider contract, but demonstrates hand-rolled
+// checkpoint/hydrate, crash-and-recreate simulation, and the SDK
+// WithStateProvider integration pass — all in memory, no disk.
 package main
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/duynguyendang/manglekit/core"
@@ -73,11 +77,9 @@ type WorkflowStep struct {
 	Metadata map[string]any
 }
 
-func main() {
-	ctx := context.Background()
-
-	fmt.Println("=== Session Recovery Example ===")
-	fmt.Println("Demonstrates durable state persistence with crash simulation")
+func demoRecovery(ctx context.Context) error {
+	fmt.Println("=== Session Recovery (in-memory StateProvider) ===")
+	fmt.Println("Demonstrates checkpoint/hydrate with crash simulation")
 	fmt.Println()
 
 	// Define a 5-step workflow
@@ -95,7 +97,7 @@ func main() {
 	// Create SDK client with the state provider to demonstrate sdk.WithStateProvider()
 	client, err := sdk.NewClient(ctx, sdk.WithStateProvider(provider))
 	if err != nil {
-		log.Fatalf("Failed to create SDK client: %v", err)
+		return fmt.Errorf("Failed to create SDK client: %w", err)
 	}
 	fmt.Println("✓ SDK client created with InMemoryStateProvider")
 	fmt.Println()
@@ -128,7 +130,7 @@ func main() {
 		executeStep(state, steps[i])
 
 		if err := sm.Checkpoint(ctx, state); err != nil {
-			log.Fatalf("Failed to checkpoint at step %d: %v", i+1, err)
+			return fmt.Errorf("Failed to checkpoint at step %d: %w", i+1, err)
 		}
 		fmt.Printf("  ✓ Checkpointed after step %d\n", i+1)
 	}
@@ -147,7 +149,7 @@ func main() {
 	// New client reuses the same provider — state persists
 	client2, err := sdk.NewClient(ctx, sdk.WithStateProvider(provider))
 	if err != nil {
-		log.Fatalf("Failed to create new client: %v", err)
+		return fmt.Errorf("Failed to create new client: %w", err)
 	}
 	defer client2.Shutdown(ctx)
 
@@ -155,10 +157,10 @@ func main() {
 
 	recovered, err := sm2.Hydrate(ctx, sessionID)
 	if err != nil {
-		log.Fatalf("Failed to hydrate session: %v", err)
+		return fmt.Errorf("Failed to hydrate session: %w", err)
 	}
 	if recovered == nil {
-		log.Fatal("No recovered state found — checkpoint may have failed")
+		return fmt.Errorf("no recovered state found — checkpoint may have failed")
 	}
 
 	fmt.Printf("  ✓ Recovered session: %s\n", recovered.SessionID)
@@ -171,7 +173,7 @@ func main() {
 		executeStep(recovered, steps[i])
 
 		if err := sm2.Checkpoint(ctx, recovered); err != nil {
-			log.Fatalf("Failed to checkpoint at step %d: %v", i+1, err)
+			return fmt.Errorf("Failed to checkpoint at step %d: %w", i+1, err)
 		}
 		fmt.Printf("  ✓ Checkpointed after step %d\n", i+1)
 	}
@@ -182,7 +184,7 @@ func main() {
 
 	final, err := sm2.Hydrate(ctx, sessionID)
 	if err != nil {
-		log.Fatalf("Failed final hydration: %v", err)
+		return fmt.Errorf("Failed final hydration: %w", err)
 	}
 
 	fmt.Printf("  Session ID:  %s\n", final.SessionID)
@@ -195,11 +197,12 @@ func main() {
 
 	// Clean up
 	if err := provider.Delete(ctx, sessionID); err != nil {
-		log.Fatalf("Failed to delete session: %v", err)
+		return fmt.Errorf("Failed to delete session: %w", err)
 	}
 	fmt.Printf("  ✓ Session %s cleaned up\n", sessionID)
 	fmt.Println()
-	fmt.Println("=== Session recovery example completed successfully ===")
+	fmt.Println("=== Session recovery completed successfully ===")
+	return nil
 }
 
 // executeStep simulates executing a workflow step by appending facts and history.

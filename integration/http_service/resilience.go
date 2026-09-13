@@ -1,4 +1,5 @@
-// production_resilience demonstrates production infrastructure patterns:
+// resilience.go — production infrastructure patterns wrapped around the
+// same /ask stack (merged from production_resilience, 2026-09-13):
 //
 //  1. Circuit Breaker: wraps a flaky action, transitioning through
 //     Closed → Open → HalfOpen → Closed states based on failure threshold.
@@ -14,7 +15,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"sync/atomic"
 
 	"github.com/duynguyendang/manglekit/adapters/resilience"
@@ -22,13 +22,13 @@ import (
 	"github.com/duynguyendang/manglekit/sdk"
 )
 
-// flakyAction fails the first N times, then succeeds.
-type flakyAction struct {
+// resilFlakyAction fails the first N times, then succeeds.
+type resilFlakyAction struct {
 	failCount int32
 	maxFails  int32
 }
 
-func (a *flakyAction) Execute(_ context.Context, env core.Envelope) (core.Envelope, error) {
+func (a *resilFlakyAction) Execute(_ context.Context, env core.Envelope) (core.Envelope, error) {
 	n := atomic.AddInt32(&a.failCount, 1)
 	if n <= a.maxFails {
 		return core.Envelope{}, fmt.Errorf("transient error (call %d)", n)
@@ -36,13 +36,11 @@ func (a *flakyAction) Execute(_ context.Context, env core.Envelope) (core.Envelo
 	return core.NewEnvelope("success after retries"), nil
 }
 
-func (a *flakyAction) Metadata() core.ActionMetadata {
+func (a *resilFlakyAction) Metadata() core.ActionMetadata {
 	return core.ActionMetadata{Name: "flaky_service", Type: "mock"}
 }
 
-func main() {
-	ctx := context.Background()
-
+func demoResilience(ctx context.Context) error {
 	// --- Circuit Breaker Demo ---
 	fmt.Println("=== Circuit Breaker Demo ===")
 	fmt.Println()
@@ -50,7 +48,7 @@ func main() {
 	fmt.Println("Action: fails 3 times, then succeeds")
 	fmt.Println()
 
-	flaky := &flakyAction{maxFails: 3}
+	flaky := &resilFlakyAction{maxFails: 3}
 	cb := resilience.NewCircuitBreaker(flaky, resilience.CircuitBreakerConfig{
 		FailureThreshold: 3,
 		ResetTimeout:     0, // immediate probe for demo
@@ -85,11 +83,11 @@ func main() {
 
 	client, err := sdk.NewClient(ctx, sdk.WithStdoutTracer())
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer client.Shutdown(ctx)
 
-	action := &flakyAction{maxFails: 0}
+	action := &resilFlakyAction{maxFails: 0}
 	client.RegisterAction("telemetry_test", client.Supervise(action))
 
 	env := core.NewEnvelope("telemetry payload")
@@ -103,5 +101,5 @@ func main() {
 	}
 
 	fmt.Println()
-	fmt.Println("Done.")
+	return nil
 }

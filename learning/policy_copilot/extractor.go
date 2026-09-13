@@ -1,5 +1,6 @@
-// extractor_bridge demonstrates the neuro-symbolic bridge: LLM text→struct
-// extraction feeding into the Datalog policy engine.
+// extractor.go — the neuro-symbolic bridge section (merged from
+// extractor_bridge, 2026-09-13): LLM text→struct extraction feeding the
+// Datalog policy engine.
 //
 // The ExtractorAction takes free-text input, asks an LLM to extract
 // structured data matching a target schema, and returns a typed struct.
@@ -17,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/duynguyendang/manglekit/adapters/extractor"
@@ -53,15 +53,14 @@ func (a *mockExtractLLM) Metadata() core.ActionMetadata {
 	return core.ActionMetadata{Name: "mock_llm", Type: "mock"}
 }
 
-func main() {
-	ctx := context.Background()
+func demoExtraction(ctx context.Context) error {
 
 	fmt.Println("=== Extractor Bridge: Text → Struct → Datalog ===")
 	fmt.Println()
 
 	ext, err := extractor.New("order_extractor", &mockExtractLLM{}, Order{})
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	inputs := []string{
@@ -102,7 +101,7 @@ func main() {
 
 	client, err := sdk.NewClient(ctx)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer client.Shutdown(ctx)
 
@@ -112,12 +111,12 @@ Decl quantity(A, B).
 Decl price(A, B).
 Decl price_exceeds(A, B).`
 	if err := client.Engine().LoadPolicy(ctx, predicates); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	policy := `halt(Req, "Order exceeds budget") :- price_exceeds(Req, "true").`
 	if err := client.Engine().LoadPolicy(ctx, policy); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	orderEnv := core.NewEnvelope(Order{Product: "gadget", Quantity: 20, Price: 75.00})
@@ -144,7 +143,7 @@ Decl price_exceeds(A, B).`
 	}
 
 	fmt.Println()
-	fmt.Println("Done.")
+	return nil
 }
 
 func priceOp(price float64) string {
