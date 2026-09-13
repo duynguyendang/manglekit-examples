@@ -13,8 +13,8 @@
 // injection. AssessPlan does not inject action_operation from an action
 // name, so each case APPENDS action_operation("Req", Name). to env.Facts
 // (see below) because gdpr_policy.dl gates halt rules on it — the
-// comment there explains why. The POST-CHECK (Reflect) is fail-open
-// (CODE_REVIEW P0.1); the proofs below rely only on the PRE-CHECK.
+// comment there explains why. The POST-CHECK (Reflect) is fail-closed
+// since ADR-001; the proofs below rely on the PRE-CHECK (blocking tier).
 // AuditTrail bindings for halt/2 rules are empty (ROADMAP.md §13).
 //
 // No API key required (deterministic mock TextGenerator).

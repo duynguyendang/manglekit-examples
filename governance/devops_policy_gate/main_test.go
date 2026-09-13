@@ -223,8 +223,9 @@ func TestPublicDatabase(t *testing.T) {
 // These pin the REAL governed contract: a halt rule must produce a
 // *core.PolicyViolationError from ExecuteByName AND the inner action must NOT
 // run (pre-check block). Allowed paths must run the inner action with err==nil.
-// Only the PRE-CHECK is a guaranteed block (P0.1 regression: the Reflect
-// POST-check is fail-open), so all blocks here rely on the pre-check.
+// The blocks here exercise the PRE-CHECK; the POST-check is also
+// fail-closed since ADR-001 (see http_service for reload, stream showcase
+// for streaming coverage).
 // ============================================================================
 
 func TestSupervisedScaleTooHighBlocked(t *testing.T) {

@@ -75,8 +75,8 @@ func TestPlanDeployToProduction(t *testing.T) {
 //
 // NOTE: This pins the REAL governed contract — the supervised
 // Supervise+ExecuteByName path — rather than a raw Engine().Assess() demo.
-// A pure Assess demo bypasses the supervisor (and would not reflect the
-// P0.1 post-check fail-open regression). The governed path is ExecuteByName.
+// A pure Assess demo bypasses the supervisor. The governed path is
+// ExecuteByName (post-check fail-closed since ADR-001).
 func TestPolicyViolationCoversApprovalGate(t *testing.T) {
 	ctx := context.Background()
 

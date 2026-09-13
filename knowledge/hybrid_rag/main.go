@@ -354,16 +354,13 @@ func runPIIScenario(ctx context.Context, client *sdk.Client, name, user string, 
 	// untrusted LLM-derived input, so the escaping concern (P0.5) does
 	// not apply to this controlled scenario.
 	//
-	// NOTE (CODE_REVIEW P0.1): this scenario demonstrates the PII halt
-	// via the supervisor POST-CHECK (Reflect), which evaluates
-	// halt("Output", ...) AFTER the inner action runs. This works when
-	// the verifier (pii_scan) succeeds, but the POST-check is FAIL-OPEN
-	// on verifier error (see docs/CODE_REVIEW.md P0.1 and
-	// docs/context/architecture.md — internal/supervisor/action.go
-	// only blocks when `err == nil && !res.Pass`). The TRUSTWORTHY gate
-	// is the supervisor PRE-CHECK (which blocks before the action runs)
-	// — see TestPreCheckFailClosed. We keep the existing post-check
-	// behavior below: the assertions still expect the post-check to halt
+	// NOTE: this scenario demonstrates the PII halt via the supervisor
+	// POST-CHECK (Reflect), which evaluates halt("Output", ...) AFTER the
+	// inner action runs and blocks the RESULT from reaching the caller.
+	// Since ADR-001 the post-check is fail-closed (a verifier ERROR also
+	// blocks); the PRE-CHECK remains the gate that blocks BEFORE anything
+	// runs — see TestPreCheckFailClosed. Assertions below expect the
+	// post-check to halt
 	// on PII in practice when the verifier succeeds.
 
 	// Exercise the PII post-check end-to-end through the real

@@ -268,9 +268,9 @@ func demonstratePrerequisiteFailure(ctx context.Context, client *sdk.Client) {
 // ExecuteByName injects action_operation("Req","deploy_production") automatically,
 // and WithMetadata supplies the meta(...) facts, so the gate is exercised for real.
 //
-// (For contrast: a pure Engine().Assess demo bypasses the supervisor entirely and
-// would not reflect the post-check fail-open regression P0.1. The governed path is
-// ExecuteByName, which is what plan steps actually use via ExecutePlan.)
+// (For contrast: a pure Engine().Assess demo bypasses the supervisor entirely.
+// The governed path is ExecuteByName — pre- AND post-check fail-closed since
+// ADR-001 — which is what plan steps actually use via ExecutePlan.)
 func demonstratePolicyViolation(ctx context.Context, client *sdk.Client) {
 	// Load a policy that blocks deploy_production without approval.
 	if err := client.Engine().LoadPolicy(ctx, approvalPolicy); err != nil {

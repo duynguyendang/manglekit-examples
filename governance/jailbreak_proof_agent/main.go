@@ -15,7 +15,7 @@
 // so it deliberately calls AssessPlan directly rather than
 // Supervise+ExecuteByName; AssessPlan does not inject action_operation on
 // its own (manglekit.NewRequestEnv adds it). The POST-CHECK (Reflect) is
-// fail-open (CODE_REVIEW P0.1) and is intentionally not relied upon here.
+// fail-closed since ADR-001; the taint proof here rides the PRE-CHECK.
 
 package main
 

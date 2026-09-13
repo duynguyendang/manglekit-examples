@@ -146,9 +146,9 @@ func TestSupervisedActionExecution(t *testing.T) {
 
 // TestPreCheckFailClosed pins that the supervisor PRE-CHECK is fail-closed
 // (Tier 0/1): a halt("Req", ...) rule must block execution and the inner
-// action must NOT run. The PII POST-check demonstrated in runPIIScenario is
-// fail-open on verifier error (CODE_REVIEW P0.1), so the trustworthy gate is
-// the PRE-CHECK — this test proves the PRE-CHECK actually blocks.
+// action must NOT run. (The PII POST-check in runPIIScenario is also
+// fail-closed since ADR-001; the PRE-CHECK is what blocks BEFORE the
+// action — this test proves that ordering.)
 //
 // We load a tiny inline policy (gated on a metadata flag we control) so the
 // test is independent of policy.dl and the data files.

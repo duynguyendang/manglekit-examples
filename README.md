@@ -152,9 +152,9 @@ What this suite demonstrates — and where you can watch it fail closed:
 | Policy violation detection | `core.IsPolicyViolationError()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning |
 | OODA cognitive loop (5-phase) | `x/ooda` | ooda_east_generation |
 | RunOODA / RunOODAEAST | `x/ooda` (`RunOODA`), `x/east` (`RunOODAEAST`) | ooda_east_generation |
-| EAST steering (entropy/saliency) | `x/east` | ooda_east_generation, ooda_east_generation |
+| EAST steering (entropy/saliency) | `x/east` | ooda_east_generation, skill_learning |
 | Mixed-precision memory | `ooda.PinAxiom` / `AddContext` / `ShaveContext` | ooda_east_generation |
-| Tool registry & dispatcher | `ooda.Registry` / `ooda.Dispatcher` | ooda_east_generation, ooda_east_generation |
+| Tool registry & dispatcher | `ooda.Registry` / `ooda.Dispatcher` | ooda_east_generation, genkit_middleware_showcase |
 | OODA as Genkit flow | `x/oodaflow` | genkit_middleware_showcase |
 | FlowRegistry | `x/oodaflow.FlowRegistry` | genkit_middleware_showcase |
 | ROUTE decision (dynamic chaining) | `core.DecisionRoute` | ooda_east_generation |
@@ -162,7 +162,7 @@ What this suite demonstrates — and where you can watch it fail closed:
 | Cross-session skill learning | `ooda.Memory` (`Builder.WithMemory`, auto-Commit in `eastPostAct`) + `ports.ReasoningPort` (`SteerKB`) | skill_learning |
 | Learn-from-code skill (UC-L8): intent router + `x/genes` induction/promotion | `x/genes` (`Gene`/`Pool`/`Compile`/`ApplyTo`), `sdk.Client` supervised EVAL | learn_from_code |
 | MCP integration | `adapters/mcp` | mcp_tool_integration |
-| Genkit middleware | `adapters/ai` | genkit_middleware_showcase, genkit_middleware_showcase |
+| Genkit middleware | `adapters/ai` | genkit_middleware_showcase, real_llm_gate |
 | Session state recovery | `core.StateProvider` | session_recovery |
 | Durable state (checkpoint/hydrate) | `core.SessionState` | session_recovery, multi_agent_research |
 | Multi-agent runtime | `multiagent.AgentSystem` | multi_agent_research |
