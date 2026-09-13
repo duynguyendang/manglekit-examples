@@ -36,7 +36,38 @@ export GOOGLE_API_KEY=your-key
 **Quick tour (one per idea):** `real_llm_gate` → `devops_policy_gate` →
 `ooda_east_generation` → `learn_from_code` → `http_service`.
 Packages marked **deep dive** below are specialist tours — read the foundations
-first. `temporal_compliance` is experimental (opt-in).
+first.
+
+**Every package answers one business question** (full UC catalog: workspace
+`docs/use-cases/`):
+
+| Question | Package | Proof you can run |
+|---|---|---|
+| Can prompt injection exfiltrate data? | `governance/jailbreak_proof_agent` | tainted exfil blocked at pre-check |
+| Dangerous infra ops blocked — and *why*? | `governance/devops_policy_gate` | T1 denies, T2 advises, Explain tree |
+| Audit trail for regulators (GDPR)? | `governance/compliance_proof` | tiered halt proofs |
+| Cheap model, still certified correct? | `governance/verified_reasoning` | wrong→wrong→right retry loop |
+| Reuse an existing policy DSL, zero engine changes? | `governance/custom_policy_format` | compile → LoadPolicy |
+| Generation that self-corrects until compliant? | `cognition/ooda_east_generation` | retry converges; ROUTE/paradox |
+| Nothing unverified streams out? | `cognition/genkit_middleware_showcase` | deny before first chunk (0 provider calls) |
+| Approvals before prod deploys, planned? | `cognition/goal_based_planning` | plan gated + deny path |
+| Learn policy from a codebase; promote humans-only? | `learning/learn_from_code` | ALLOW→DENY after `--confirm` |
+| Agents get better across sessions? | `learning/skill_learning` | 2 attempts → 1 attempt |
+| Security team writes policy in English? | `learning/policy_copilot` | NL→rule→signed gene; tamper rejected |
+| Org access graph answers with proof? | `knowledge/knowledge_graph_reasoning` | graph tiered queries |
+| Tenant data stays in tenant? | `knowledge/hybrid_rag` | cross-tenant RAG blocked |
+| Was authorization valid *at transaction time*? | `knowledge/temporal_compliance` | revoked-after misuse denied |
+| Short-lived facts: where, who, when-die? | `storage/silo_storage` | TTL expiry + coordination facts |
+| Agent survives crash/restart? | `storage/persistent_store` | close/reopen resume; crash sim |
+| Gate inside a real service, staying up? | `integration/http_service` | 403; hot reload flips; breaker |
+| MCP tools can't bypass policy? | `integration/mcp_tool_integration` | gated tool calls |
+| CI catches architecture violations? | `integration/code_to_policy_extractor` | `ci_gate.sh` exit 1/0 |
+| Ship skills from YAML? | `integration/config_driven_app` | config-loaded gated skill |
+| Hello, gate (real LLM, mock fallback)? | `integration/real_llm_gate` | allow + deny |
+| Long multi-agent jobs resume? | `integration/multi_agent_research` | hydrated resume |
+ `temporal_compliance` answers a real audit question (was an
+authorization valid *at transaction time*?); the engine feature is opt-in
+(`EnableTemporal`), the story is not a demo.
 
 
 Examples live under six domain folders — `governance/`, `cognition/`,
@@ -65,7 +96,7 @@ Zero-trust policy enforcement — the core value prop of manglekit.
 | **compliance_proof** | GDPR as tiered Datalog — `AssessPlan` renders `AuditTrail` as machine-checkable proof | No | `go run ./governance/compliance_proof/` |
 | **jailbreak_proof_agent** | T0 taint axiom blocks data exfiltration — mock LLM complies with injection but kernel holds | No | `go run ./governance/jailbreak_proof_agent/` |
 | **verified_reasoning** | Cheap model + symbolic verifier = certified-correct output via verify-retry loop | No | `go run ./governance/verified_reasoning/` |
-| **temporal_compliance** | Experimental temporal reasoning: is an authorization/​fact still valid at the time a transaction occurred? | No | `go run ./knowledge/temporal_compliance/` |
+| **temporal_compliance** | **Was authorization valid at transaction time?** Retro-audit with temporal facts (UC-G5; engine feature is opt-in via `EnableTemporal`) | No | `go run ./knowledge/temporal_compliance/` |
 
 ### 3. Knowledge & Reasoning
 
@@ -75,7 +106,7 @@ Knowledge graphs, vector search, and hybrid RAG patterns.
 |---|---|---|---|
 | **knowledge_graph_reasoning** | Load N-Triples knowledge graphs, define transitive Datalog rules, query with audit trails | No | `go run ./knowledge/knowledge_graph_reasoning/` |
 | **hybrid_rag** | Multi-tenant RAG with transitive access control and egress tainting | No (mocks) | `go run ./knowledge/hybrid_rag/` |
-| **silo_storage** | SessionStore (TTL), TransientFactsStore, N-Triples parsing, and Vector Store | No | `go run ./storage/silo_storage/` |
+| **silo_storage** | **Where do short-lived facts live, who shares them, when do they die?** Session TTL/expiry, transient OODA coordination facts, vectors, N-Triples loading (UC-K3) | No | `go run ./storage/silo_storage/` |
 
 > **Note:** hybrid_rag's access-control and egress scenarios run on the full
 > `client.Supervise()` pre-check path: `ExecuteByName` recalls memory
@@ -90,7 +121,7 @@ Observe-Orient-Decide-Act loops with entropic steering and self-correction.
 
 | Example | Description | API Key | Run |
 |---|---|---|---|
-| **ooda_east_generation** | The OODA tour: `RunOODA`/`RunOODAEAST`, EAST steering + Teacher-Student retry, mixed-precision memory, ROUTE chaining + SteerKB + paradox (ex `ooda_east_generation`), custom 5-phase strategies & multi-turn convergence (ex `ooda_east_generation`) | No | `go run ./cognition/ooda_east_generation/` |
+| **ooda_east_generation** | **Can a generation loop self-correct until policy is satisfied?** Run/RunEAST tours: Teacher-Student retry, mixed-precision memory, ROUTE + SteerKB + paradox (ex `route_chaining`), custom 5-phase convergence (ex `ooda_document_generator`) | No | `go run ./cognition/ooda_east_generation/` |
 | **skill_learning** | Cross-session skill learning: file-backed `ooda.Memory` (auto-Commit learner, Orient-time Recall) + `ports.ReasoningPort` route learning for `SteerKB` — session 2 needs fewer refinements and takes the learned fast path after a simulated restart | No | `go run ./learning/skill_learning/` |
 | **learn_from_code** | UC-L8 "learn from code" skill: deterministic intent router (LEARN/EVAL/PROMOTE/STATUS) — source tree → signals → induced `x/genes` candidates (advisory T2/T3 only, signed, provenanced), shadow EVAL through the real gate, human-confirmed PROMOTE to T1 that then DENIES (`docs/use-cases/learning.md`) | No | `go run ./learning/learn_from_code/` |
 
@@ -249,7 +280,7 @@ All examples include tests. No external API keys required for tests — mocks ar
   knowledge/             -- facts, retrieval, time
     knowledge_graph_reasoning/ -- N-Triples graph reasoning
     hybrid_rag/          -- multi-tenant RAG with access control
-    temporal_compliance/ -- validity-at-time reasoning (experimental)
+    temporal_compliance/ -- validity-at-time audit reasoning
   storage/               -- The Silo
     silo_storage/        -- session/transient/vector/MEB subsystems
     persistent_store/    -- durable store + checkpoint/hydrate recovery tour

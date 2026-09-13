@@ -1,4 +1,5 @@
-// ooda_east_generation is the full OODA tour on x/ooda + x/east:
+// ooda_east_generation answers: CAN A GENERATION LOOP SELF-CORRECT UNTIL
+// POLICY IS SATISFIED? Full OODA tour on x/ooda + x/east:
 //   - RunOODA: deterministic tool flow (no EAST)
 //   - RunOODAEAST: EAST steering, mixed-precision memory
 //     (PinAxiom/AddContext/ShaveContext), Teacher-Student retry,

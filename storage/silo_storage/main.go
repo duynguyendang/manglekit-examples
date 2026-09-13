@@ -1,5 +1,6 @@
-// silo_storage demonstrates the Manglekit storage subsystem
-// (`adapters/storage/session`, `adapters/knowledge`, `adapters/vector`):
+// silo_storage answers: WHERE DO SHORT-LIVED FACTS LIVE — who shares them,
+// and when do they die? (UC-K3). Mechanisms underneath:
+// (`adapters/storage/session`, `adapters/knowledge`, `adapters/vector`)
 //
 //   - SessionStore: transient in-memory facts with TTL
 //   - TransientFactsStore: OODA coordination facts via ports.TransientStore
