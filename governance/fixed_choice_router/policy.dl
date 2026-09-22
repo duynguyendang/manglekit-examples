@@ -1,0 +1,63 @@
+% ============================================================
+% Fixed-Choice Routing Gate — thresholds AS POLICY, not code
+% ============================================================
+% The Jev-style recipe keeps the routing confidence bars inside the
+% Python caller. Here they are policy constants: editing them needs no
+% recompile and no redeploy (client.ReloadPolicy hot-swaps this file),
+% and every decision derived from them carries the numbers in its
+% Explain proof tree.
+%
+% Why rule-defined rather than bare facts: ReloadPolicy replaces the
+% RULES atomically, but bare facts survive the swap as base facts — a
+% reloaded program would otherwise keep the old numbers visible next to
+% the new ones. Defining threshold/2 through rules anchored on an
+% invariant base fact means the swap replaces the DEFINITION, so the
+% active policy answers with exactly one value per threshold. The
+% anchor fact policy_anchor("ok"). is identical in every version of
+% this file, so surviving the reload is harmless.
+%
+% Values are strings so the Go side and the proof tree print exactly
+% what the policy author wrote (no float round-trip drift).
+
+Decl policy_anchor(Marker).
+policy_anchor("ok").
+
+Decl threshold(Name, Value).
+threshold("auto", "0.80") :- policy_anchor("ok").
+threshold("margin", "0.20") :- policy_anchor("ok").
+threshold("review", "0.70") :- policy_anchor("ok").
+
+% Go publishes the model's numbers; the engine is the gate, not the
+% calculator (same boundary devops_policy_gate documents).
+Decl confidence(Value).
+Decl margin_value(Value).
+Decl entropy_value(Value).
+
+% --- T1: below the review floor -> escalate to a human -----------------
+halt("Req", "confidence_below_review_floor_escalate", "T1") :-
+    action_operation("Req", "route_ticket"),
+    meta("below_review", "true").
+
+% --- T1: below the auto threshold -> send to the review queue ----------
+halt("Req", "low_confidence_send_to_review", "T1") :-
+    action_operation("Req", "route_ticket"),
+    meta("below_auto", "true"),
+    !meta("below_review", "true"),
+    confidence(P),
+    threshold("auto", T).
+
+% --- T1: no valid choice came back (generation-lane parse failure) -----
+% The OTHER/ESCALATE escape hatch: refuse to guess.
+halt("Req", "no_valid_choice_escalate", "T1") :-
+    action_operation("Req", "route_ticket"),
+    meta("no_valid_choice", "true").
+
+% --- T2 advisory: confident but a thin lead over the runner-up ---------
+% Explicitly tagged T2: VISIBLE in Explain, never blocks. Under a 3-way
+% softmax the margin gate is mostly dominated by the confidence gate; it
+% earns its keep on denser label sets or after calibration moves mass.
+halt("Req", "thin margin over runner-up — consider spot-checking", "T2") :-
+    action_operation("Req", "route_ticket"),
+    meta("thin_margin", "true"),
+    margin_value(M),
+    threshold("margin", T).

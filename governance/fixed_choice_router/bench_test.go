@@ -1,0 +1,165 @@
+package main
+
+import (
+	"context"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/duynguyendang/manglekit-examples/governance/fixed_choice_router/datasets"
+)
+
+// TestBenchmarkMockModeRuns runs the FULL two-lane harness in mock mode —
+// barrier, concurrent lanes, metrics assembly — so bench.go is covered by
+// CI without any GPU. Latency columns are intentionally absent here.
+func TestBenchmarkMockModeRuns(t *testing.T) {
+	cases := fixtureCases(t)
+	out := captureStdout(t, func() {
+		if err := runBenchmark(context.Background(), NewMockScorer(cases), false, cases, 60); err != nil {
+			t.Errorf("benchmark: %v", err)
+		}
+	})
+	if strings.Contains(out, "p50") {
+		t.Fatalf("mock mode must not publish latency numbers:\n%s", out)
+	}
+	for _, want := range []string{"Two-lane benchmark over 60 cases", "scoring", "generation", "accuracy"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("bench output must contain %q, got:\n%s", want, out)
+		}
+	}
+}
+
+// TestThresholdDemoMeasuresPolicyEffect runs Truc B end-to-end.
+func TestThresholdDemoMeasuresPolicyEffect(t *testing.T) {
+	cases := fixtureCases(t)
+	out := captureStdout(t, func() {
+		if err := runThresholdDemo(context.Background(), NewMockScorer(cases), cases[:30]); err != nil {
+			t.Errorf("threshold demo: %v", err)
+		}
+	})
+	for _, want := range []string{
+		"REJECTED",
+		"old policy still active",
+		"policy.dl          60.0%", // strict: 60% auto on the 10-case profile rotation
+		"policy_relaxed.dl  80.0%", // relaxed: the review band flips to auto
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("threshold demo output must contain %q, got:\n%s", want, out)
+		}
+	}
+}
+
+// TestCalibrationReportsAndTemperatureHelps pins the calibration code:
+// ECE raw must improve (or at least not worsen) after the fitted scalar.
+func TestCalibrationReportsAndTemperatureHelps(t *testing.T) {
+	cases := fixtureCases(t)
+	obs := make([]calObservation, 0, len(cases))
+	scorer := NewMockScorer(cases)
+	for _, c := range cases {
+		opts := optionsFor(c)
+		dec, err := scorer.Decide(context.Background(), BuildPrompt(c, opts), optionLetters, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := make([]float64, len(opts))
+		goldIdx := -1
+		for i, o := range opts {
+			p[i] = dec.Distribution[o]
+			if o == c.Gold {
+				goldIdx = i
+			}
+		}
+		obs = append(obs, calObservation{probs: p, goldIdx: goldIdx})
+	}
+	rawECE := ece(rawEntries(obs))
+	if rawECE <= 0 {
+		t.Fatalf("fixture set should carry measurable miscalibration, got ECE=%v", rawECE)
+	}
+	bestT, _ := fitTemperature(obs)
+	scaledECE := ece(scaledEntriesAt(obs, bestT))
+	if scaledECE > rawECE {
+		t.Fatalf("temperature scaling must not worsen ECE: raw=%.4f scaled=%.4f (T=%.2f)", rawECE, scaledECE, bestT)
+	}
+}
+
+// TestPermutationFlipsAreDetected proves the harness catches order
+// sensitivity on the order-EXPOSED lane (mock generator with simulated
+// primacy bias) and reports order invariance on the scoring lane.
+func TestPermutationFlipsAreDetected(t *testing.T) {
+	cases := fixtureCases(t)
+	out := captureStdout(t, func() {
+		if err := runPermutation(context.Background(), NewMockScorer(cases), false, cases); err != nil {
+			t.Errorf("permutation: %v", err)
+		}
+	})
+	if !strings.Contains(out, "scoring lane    flip-rate: 0.0%") {
+		t.Fatalf("fixture mock scorer must be order-invariant:\n%s", out)
+	}
+	if strings.Contains(out, "generation lane flip-rate: 0.0%") {
+		t.Fatalf("mock generator carries a simulated primacy bias; the harness must detect flips:\n%s", out)
+	}
+}
+
+// TestAverageOverPermutationsGatesCleanly exercises the mitigation path:
+// the averaged distribution stays normalized and the gate accepts it.
+func TestAverageOverPermutationsGatesCleanly(t *testing.T) {
+	ctx := context.Background()
+	cases := fixtureCases(t)
+	scorer := NewMockScorer(cases)
+	gate, err := NewClientWithPolicy(ctx, policyPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Shutdown(ctx)
+	th, err := ReadThresholds(ctx, gate.client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec, err := AverageOverPermutations(ctx, scorer, cases[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := 0.0
+	for _, v := range dec.Distribution {
+		sum += v
+	}
+	if sum < 0.999 || sum > 1.001 {
+		t.Fatalf("averaged distribution must stay normalized, got %v", sum)
+	}
+	if dec.Choice != cases[0].Gold {
+		t.Fatalf("confident case must keep its gold choice after averaging: %v", dec.Choice)
+	}
+	if _, err := gate.Route(ctx, cases[0].ID, dec, th); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestLiveSmoke validates the real /v1/score + /v1/chat/completions path
+// against a running OpenAI-compatible server. It is env-gated: without the
+// backend configured it SKIPS, so `make test` stays green with no GPU and
+// no keys (repo contract).
+func TestLiveSmoke(t *testing.T) {
+	if os.Getenv("MANGLE_SCORER_BACKEND") == "" {
+		t.Skip("MANGLE_SCORER_BACKEND not set — live smoke test skipped")
+	}
+	scorer, err := NewSGLangScorerFromEnv()
+	if err != nil {
+		t.Fatalf("live scorer: %v", err)
+	}
+	ctx := context.Background()
+	c := datasets.Case{
+		ID:     "live-smoke-000",
+		Domain: datasets.DomainSupport,
+		Text:   "I was charged twice this month, please refund the duplicate. (ref live-smoke-000)",
+		Gold:   "billing",
+	}
+	opts := optionsFor(c)
+	dec, err := scorer.Decide(ctx, BuildPrompt(c, opts), optionLetters, opts)
+	if err != nil {
+		t.Fatalf("live decide: %v", err)
+	}
+	if _, ok := dec.Distribution["billing"]; !ok {
+		t.Fatalf("live distribution must cover the business options: %v", dec.Distribution)
+	}
+	t.Logf("live decision: %s %v (margin %.3f)", dec.Choice, dec.Distribution, dec.Margin)
+}
