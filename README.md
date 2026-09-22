@@ -15,6 +15,7 @@ make clean       # clean test artifacts and binaries
 
 - Go 1.25.1
 - A Google AI API key (`GOOGLE_API_KEY`) for examples marked "Yes" in the API Key column
+- Optional: an OpenAI-compatible scoring server (`MANGLE_SCORER_BACKEND` + `MANGLE_SCORER_MODEL`) for **fixed_choice_router**'s live mode; every mode runs fully offline against deterministic fixtures without it
 - Optional: an OpenAI key (`OPENAI_API_KEY`) for **real_llm_gate**'s live mode (falls back to a deterministic mock without any key)
 
 ## Setup
@@ -47,6 +48,7 @@ first.
 | Dangerous infra ops blocked — and *why*? | `governance/devops_policy_gate` | T1 denies, T2 advises, Explain tree |
 | Audit trail for regulators (GDPR)? | `governance/compliance_proof` | tiered halt proofs |
 | Cheap model, still certified correct? | `governance/verified_reasoning` | wrong→wrong→right retry loop |
+| Routing decision with provable thresholds (Jev parity)? | `governance/fixed_choice_router` | distribution → T1 halt + Explain P/T bindings; live/mock dual mode |
 | Reuse an existing policy DSL, zero engine changes? | `governance/custom_policy_format` | compile → LoadPolicy |
 | Generation that self-corrects until compliant? | `cognition/ooda_east_generation` | retry converges; ROUTE/paradox |
 | Nothing unverified streams out? | `cognition/genkit_middleware_showcase` | deny before first chunk (0 provider calls) |
@@ -96,6 +98,7 @@ Zero-trust policy enforcement — the core value prop of manglekit.
 | **compliance_proof** | GDPR as tiered Datalog — `AssessPlan` renders `AuditTrail` as machine-checkable proof | No | `go run ./governance/compliance_proof/` |
 | **jailbreak_proof_agent** | T0 taint axiom blocks data exfiltration — mock LLM complies with injection but kernel holds | No | `go run ./governance/jailbreak_proof_agent/` |
 | **verified_reasoning** | Cheap model + symbolic verifier = certified-correct output via verify-retry loop | No | `go run ./governance/verified_reasoning/` |
+| **fixed_choice_router** ★ | Jev-parity fixed-choice routing: single-pass A/B/C scoring (restricted softmax) with thresholds as hot-reloadable Datalog, Explain proofs, two-lane benchmark, calibration + permutation tests — mock by default, live via `MANGLE_SCORER_BACKEND` | No (mock; optional OpenAI-compatible server) | `go run ./governance/fixed_choice_router/` |
 | **temporal_compliance** | **Was authorization valid at transaction time?** Retro-audit with temporal facts (UC-G5; engine feature is opt-in via `EnableTemporal`) | No | `go run ./knowledge/temporal_compliance/` |
 
 ### 3. Knowledge & Reasoning
@@ -158,6 +161,7 @@ What this suite demonstrates — and where you can watch it fail closed:
 | Nothing unverified streams out | `genkit_middleware_showcase`: the denied stream proves the provider was never opened (call counter 0→0); a post-check refusal kills the assembled output's finality |
 | The gate works in CI where it counts | `code_to_policy_extractor`: `ci_gate.sh` — exit 0 clean / 1 deny / never a masquerade |
 | Generated rules need provenance + signatures | `policy_copilot`: NL → Datalog → signed T3 gene; a whitespace-only edit is detected and rejected |
+| Confidence bars are policy, swappable under load | `fixed_choice_router`: same scored case flips review→auto-route after `ReloadPolicy`; a broken policy file is rejected and the old program keeps answering |
 | The kernel learns from itself | `learn_from_code`: whole-tree LEARN → ASK your drafts against the material → PROMOTE is human-only; the kernel's own pool + drift CI live in this repo's `dogfood/` |
 
 ## Manglekit Features Demonstrated
@@ -170,8 +174,8 @@ What this suite demonstrates — and where you can watch it fail closed:
 | AssessPlan (pure policy-decision) | `Engine().AssessPlan()` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_east_generation, jailbreak_proof_agent |
 | AuditTrail rendering | `core.AuditTrail` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_east_generation |
 | Tiered governance (T0–T3, real block/advisory split) | `core.Tier`, supervisor gate | compliance_proof, devops_policy_gate, ooda_east_generation |
-| Explainable deny | `client.Explain`, structured `PolicyViolationError` | devops_policy_gate |
-| Hot policy reload | `client.ReloadPolicy` (fail-safe atomic swap) | http_service |
+| Explainable deny | `client.Explain`, structured `PolicyViolationError` | devops_policy_gate, fixed_choice_router |
+| Hot policy reload | `client.ReloadPolicy` (fail-safe atomic swap) | http_service, fixed_choice_router |
 | Supervised streaming | `adapters/ai.NewStreamingSupervisedAction` | genkit_middleware_showcase |
 | CI exit-code contract | `mkit eval` → 0/1/2/3 | code_to_policy_extractor (`ci_gate.sh`) |
 | Signed learned-rule packaging | `x/genes` (Gene/Pool/Compile/ApplyTo) | policy_copilot, learn_from_code |
@@ -203,6 +207,8 @@ What this suite demonstrates — and where you can watch it fail closed:
 | Condition evaluation (Datalog) | `AgentSystem.EvaluateCondition()` | multi_agent_research |
 | Taint labels (security) | `core.Envelope.SecurityLabels` | jailbreak_proof_agent, hybrid_rag |
 | Symbolic verification | `Engine().Query()` | verified_reasoning |
+| Fixed-choice scoring gate (restricted softmax → tiered thresholds) | `Scorer` + `Engine().Query` (threshold/2) + supervised `route_ticket` | fixed_choice_router |
+| Calibration / order-robustness harness (ECE, temperature, permutation) | example-side Go on Decision distributions | fixed_choice_router (`--mode=calibrate`, `--mode=permute`) |
 | Custom policy format → Datalog | user DSL → `Client.LoadPolicy()` | custom_policy_format |
 | Generics API | `sdk.Define[In,Out]()` | config_driven_app |
 | Declarative YAML config | `config.Load()` / `sdk.WithConfig()` | config_driven_app |
@@ -266,6 +272,7 @@ All examples include tests. No external API keys required for tests — mocks ar
   governance/            -- policy gate mechanics
     devops_policy_gate/  -- CI/CD gates + T1/T2 tier split + Explain proofs
     compliance_proof/    -- GDPR tiered Datalog with audit proof
+    fixed_choice_router/ -- Jev-parity fixed-choice routing: scoring gate + Explain + two-lane bench
     jailbreak_proof_agent/ -- T0 taint axiom blocks exfiltration
     verified_reasoning/  -- symbolic verify-retry certification loop
     custom_policy_format/ -- user DSL → Datalog via LoadPolicy
