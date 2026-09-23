@@ -107,12 +107,15 @@ func optionsByLetter(prompt string, opts []string) (map[string]string, bool) {
 	return out, true
 }
 
-// SGLangGenerator is the live generation lane: POST {base}/v1/chat/completions
-// with temperature 0 and max_tokens 32 (the blog's exact budget).
+// SGLangGenerator is the live generation lane: POST to an OpenAI-compatible
+// /chat/completions endpoint with temperature 0 and max_tokens 32 (the blog's
+// exact budget). Endpoint is absolute so the same type serves a self-hosted
+// SGLang server (no key) and a hosted API (bearer key).
 type SGLangGenerator struct {
-	BaseURL string
-	Model   string
-	Client  *http.Client
+	Endpoint string
+	Model    string
+	APIKey   string
+	Client   *http.Client
 }
 
 // NewSGLangGeneratorFromEnv builds the live generator from the same env
@@ -123,7 +126,31 @@ func NewSGLangGeneratorFromEnv() (*SGLangGenerator, bool) {
 	if base == "" || model == "" {
 		return nil, false
 	}
-	return &SGLangGenerator{BaseURL: base, Model: model, Client: &http.Client{Timeout: 120 * time.Second}}, true
+	return &SGLangGenerator{
+		Endpoint: base + "/v1/chat/completions",
+		Model:    model,
+		Client:   &http.Client{Timeout: 120 * time.Second},
+	}, true
+}
+
+// NewHostedGeneratorFromEnv is the generation lane for the key-only path: the
+// same OpenAI-compatible contract the LLM scorer uses, so both lanes hit one
+// endpoint and the comparison stays fair.
+func NewHostedGeneratorFromEnv(model string) (*SGLangGenerator, error) {
+	key := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	if key == "" || key == "your_openai_api_key_here" {
+		return nil, errors.New("OPENAI_API_KEY not set")
+	}
+	base := strings.TrimRight(strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")), "/")
+	if base == "" {
+		base = "https://api.openai.com/v1"
+	}
+	return &SGLangGenerator{
+		Endpoint: base + "/chat/completions",
+		Model:    model,
+		APIKey:   key,
+		Client:   &http.Client{Timeout: 120 * time.Second},
+	}, nil
 }
 
 type chatMessage struct {
@@ -151,11 +178,14 @@ func (g *SGLangGenerator) Generate(ctx context.Context, prompt string) (string, 
 		"temperature": 0,
 	}
 	body, _ := json.Marshal(reqBody)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.BaseURL+"/v1/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.Endpoint, bytes.NewReader(body))
 	if err != nil {
 		return "", 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if g.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+g.APIKey)
+	}
 	resp, err := g.Client.Do(req)
 	if err != nil {
 		return "", 0, fmt.Errorf("/v1/chat/completions: %w", err)

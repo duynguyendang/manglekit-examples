@@ -15,7 +15,7 @@ make clean       # clean test artifacts and binaries
 
 - Go 1.25.1
 - A Google AI API key (`GOOGLE_API_KEY`) for examples marked "Yes" in the API Key column
-- Optional: an OpenAI-compatible scoring server (`MANGLE_SCORER_BACKEND` + `MANGLE_SCORER_MODEL`) for **fixed_choice_router**'s live mode; every mode runs fully offline against deterministic fixtures without it
+- Optional: an OpenAI-compatible scoring server (`MANGLE_SCORER_BACKEND` + `MANGLE_SCORER_MODEL`) for **fixed_choice_router**'s `/v1/score` mode, or just `MANGLE_SCORER=openai` + `OPENAI_API_KEY` for its key-only chat-logprobs mode; every mode runs fully offline against deterministic fixtures without either
 - Optional: an OpenAI key (`OPENAI_API_KEY`) for **real_llm_gate**'s live mode (falls back to a deterministic mock without any key)
 
 ## Setup
@@ -98,7 +98,7 @@ Zero-trust policy enforcement — the core value prop of manglekit.
 | **compliance_proof** | GDPR as tiered Datalog — `AssessPlan` renders `AuditTrail` as machine-checkable proof | No | `go run ./governance/compliance_proof/` |
 | **jailbreak_proof_agent** | T0 taint axiom blocks data exfiltration — mock LLM complies with injection but kernel holds | No | `go run ./governance/jailbreak_proof_agent/` |
 | **verified_reasoning** | Cheap model + symbolic verifier = certified-correct output via verify-retry loop | No | `go run ./governance/verified_reasoning/` |
-| **fixed_choice_router** ★ | Jev-parity fixed-choice routing: single-pass A/B/C scoring (restricted softmax) with thresholds as hot-reloadable Datalog, Explain proofs, two-lane benchmark, calibration + permutation tests — mock by default, live via `MANGLE_SCORER_BACKEND` | No (mock; optional OpenAI-compatible server) | `go run ./governance/fixed_choice_router/` |
+| **fixed_choice_router** ★ | Jev-parity fixed-choice routing: single-pass A/B/C scoring (restricted softmax) with thresholds as hot-reloadable Datalog, Explain proofs, two-lane benchmark, calibration + permutation tests. Three backends: deterministic mock (default), key-only hosted chat logprobs (`MANGLE_SCORER=openai`), or a `/v1/score` server (`MANGLE_SCORER_BACKEND`) | No (mock; API key or optional server for live) | `go run ./governance/fixed_choice_router/` |
 | **temporal_compliance** | **Was authorization valid at transaction time?** Retro-audit with temporal facts (UC-G5; engine feature is opt-in via `EnableTemporal`) | No | `go run ./knowledge/temporal_compliance/` |
 
 ### 3. Knowledge & Reasoning

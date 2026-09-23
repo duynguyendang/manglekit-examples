@@ -87,7 +87,7 @@ func measureUnderPolicy(ctx context.Context, gate *Gate, scorer Scorer, cases []
 	m := policyMeasure{name: name}
 	for _, c := range cases {
 		opts := optionsFor(c)
-		dec, err := scorer.Decide(ctx, BuildPrompt(c, opts), optionLetters, opts)
+		dec, err := scorer.Score(ctx, BuildPrompt(c, opts), optionLetters, opts)
 		if err != nil {
 			return m, fmt.Errorf("score %s: %w", c.ID, err)
 		}

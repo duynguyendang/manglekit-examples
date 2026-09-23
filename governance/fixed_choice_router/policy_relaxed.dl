@@ -31,6 +31,10 @@ halt("Req", "no_valid_choice_escalate", "T1") :-
     action_operation("Req", "route_ticket"),
     meta("no_valid_choice", "true").
 
+halt("Req", "unobserved_distribution_escalate", "T1") :-
+    action_operation("Req", "route_ticket"),
+    meta("unobserved_distribution", "true").
+
 halt("Req", "thin margin over runner-up — consider spot-checking", "T2") :-
     action_operation("Req", "route_ticket"),
     meta("thin_margin", "true"),

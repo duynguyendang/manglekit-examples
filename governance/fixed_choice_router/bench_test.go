@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit-examples/governance/fixed_choice_router/datasets"
+	"github.com/duynguyendang/manglekit/adapters/scoring"
 )
 
 // TestBenchmarkMockModeRuns runs the FULL two-lane harness in mock mode —
@@ -26,6 +27,16 @@ func TestBenchmarkMockModeRuns(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("bench output must contain %q, got:\n%s", want, out)
 		}
+	}
+	// Regression guard for the shared-gate race: both lanes used to share one
+	// client, so the "did the dispatch run?" counter raced and ~20% of calls
+	// errored out silently (Total counted them, no outcome did). Every case
+	// must land in exactly one outcome bucket, with zero errors.
+	if !strings.Contains(out, "scoring     60     0  ") {
+		t.Fatalf("scoring lane must report 60 cases and 0 errors:\n%s", out)
+	}
+	if strings.Contains(out, "!!") {
+		t.Fatalf("bench must not report lane errors:\n%s", out)
 	}
 }
 
@@ -57,7 +68,7 @@ func TestCalibrationReportsAndTemperatureHelps(t *testing.T) {
 	scorer := NewMockScorer(cases)
 	for _, c := range cases {
 		opts := optionsFor(c)
-		dec, err := scorer.Decide(context.Background(), BuildPrompt(c, opts), optionLetters, opts)
+		dec, err := scorer.Score(context.Background(), BuildPrompt(c, opts), optionLetters, opts)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -142,7 +153,13 @@ func TestLiveSmoke(t *testing.T) {
 	if os.Getenv("MANGLE_SCORER_BACKEND") == "" {
 		t.Skip("MANGLE_SCORER_BACKEND not set — live smoke test skipped")
 	}
-	scorer, err := NewSGLangScorerFromEnv()
+	base := strings.TrimRight(os.Getenv("MANGLE_SCORER_BACKEND"), "/")
+	scorer, err := scoring.NewScoreServer(scoring.ScoreConfig{
+		BaseURL:     base,
+		Model:       os.Getenv("MANGLE_SCORER_MODEL"),
+		Tokenizer:   scoring.NewHTTPTokenizer(base, nil),
+		SpacePrefix: os.Getenv("MANGLE_SCORER_SPACE") == "1",
+	})
 	if err != nil {
 		t.Fatalf("live scorer: %v", err)
 	}
@@ -154,7 +171,7 @@ func TestLiveSmoke(t *testing.T) {
 		Gold:   "billing",
 	}
 	opts := optionsFor(c)
-	dec, err := scorer.Decide(ctx, BuildPrompt(c, opts), optionLetters, opts)
+	dec, err := scorer.Score(ctx, BuildPrompt(c, opts), optionLetters, opts)
 	if err != nil {
 		t.Fatalf("live decide: %v", err)
 	}

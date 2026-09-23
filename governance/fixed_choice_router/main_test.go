@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/duynguyendang/manglekit-examples/governance/fixed_choice_router/datasets"
+	"github.com/duynguyendang/manglekit/adapters/scoring"
 )
 
 // helper: build mock scorer over the committed fixtures.
@@ -28,7 +29,7 @@ func fixtureCases(t *testing.T) []datasets.Case {
 func mustScore(t *testing.T, s Scorer, c datasets.Case) *Decision {
 	t.Helper()
 	opts := optionsFor(c)
-	dec, err := s.Decide(context.Background(), BuildPrompt(c, opts), optionLetters, opts)
+	dec, err := s.Score(context.Background(), BuildPrompt(c, opts), optionLetters, opts)
 	if err != nil {
 		t.Fatalf("decide %s: %v", c.ID, err)
 	}
@@ -84,10 +85,10 @@ func TestMockDecisionIsBusinessNormalized(t *testing.T) {
 // "A" trap: a label that is not a single token cannot be scored.
 func TestSingleTokenValidationRejectsMultiCharLabels(t *testing.T) {
 	ctx := context.Background()
-	if err := validateSingleTokens(ctx, MockTokenizer{}, []string{"A", "B", "C"}); err != nil {
+	if err := scoring.ValidateSingleTokens(ctx, MockTokenizer{}, []string{"A", "B", "C"}); err != nil {
 		t.Fatalf("single letters must pass validation: %v", err)
 	}
-	if err := validateSingleTokens(ctx, MockTokenizer{}, []string{"maybe"}); err == nil {
+	if err := scoring.ValidateSingleTokens(ctx, MockTokenizer{}, []string{"maybe"}); err == nil {
 		t.Fatal("multi-character label must fail single-token validation")
 	}
 }

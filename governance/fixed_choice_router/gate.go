@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync/atomic"
 
 	"github.com/duynguyendang/manglekit"
 	function "github.com/duynguyendang/manglekit/adapters/func"
+	"github.com/duynguyendang/manglekit/adapters/scoring"
 	"github.com/duynguyendang/manglekit/core"
 )
 
@@ -33,45 +33,15 @@ const (
 	OutcomeEscalate = "escalate_human" // T1 halt: below the review floor / no valid choice
 )
 
-// Thresholds read FROM the policy at runtime (threshold/2 rules — see the
-// policy.dl header for why rule-defined beats bare facts). The policy file
-// is the single source of truth; Go only does the arithmetic the engine's
-// analyzer deliberately refuses to do (cross-fact :lt on floats).
-type Thresholds struct {
-	Auto   float64
-	Margin float64
-	Review float64
-}
+// Thresholds come from the kernel adapter; the alias keeps the tour code short.
+type Thresholds = scoring.Thresholds
 
-// ReadThresholds queries the loaded policy for its threshold facts. After a
-// ReloadPolicy these are the NEW numbers — that is the whole point.
+// ReadThresholds reads the bars from the ACTIVE policy via the kernel adapter
+// (threshold/2 rules). After a ReloadPolicy these are the new numbers, and an
+// ambiguous or missing bar is a hard error rather than a permissive default —
+// see ADR-005.
 func ReadThresholds(ctx context.Context, client *manglekit.Client) (Thresholds, error) {
-	get := func(name string) (float64, error) {
-		sols, err := client.Engine().Query(ctx, nil, fmt.Sprintf(`threshold("%s", V)`, name))
-		if err != nil {
-			return 0, fmt.Errorf(`query threshold("%s"): %w`, name, err)
-		}
-		if len(sols) == 0 {
-			return 0, fmt.Errorf(`policy has no threshold("%s") fact`, name)
-		}
-		v, err := strconv.ParseFloat(sols[0]["V"], 64)
-		if err != nil {
-			return 0, fmt.Errorf(`threshold("%s")=%q not a float: %w`, name, sols[0]["V"], err)
-		}
-		return v, nil
-	}
-	var th Thresholds
-	var err error
-	if th.Auto, err = get("auto"); err != nil {
-		return th, err
-	}
-	if th.Margin, err = get("margin"); err != nil {
-		return th, err
-	}
-	if th.Review, err = get("review"); err != nil {
-		return th, err
-	}
-	return th, nil
+	return scoring.ThresholdsFromPolicy(ctx, client.Engine(), "threshold")
 }
 
 // Gate carries the client and the supervised action counter so callers can
@@ -111,33 +81,14 @@ func (g *Gate) Shutdown(ctx context.Context) error { return g.client.Shutdown(ct
 // Executed returns how many route_ticket dispatches actually ran.
 func (g *Gate) Executed() int32 { return atomic.LoadInt32(&g.executed) }
 
-// Route applies the policy to one scoring decision and returns the
-// outcome. It publishes the decision's numbers as facts and the
-// threshold comparisons as meta flags (Go computes, policy gates — the
-// same boundary devops_policy_gate documents).
+// Route applies the policy to one scoring decision and returns the outcome.
+// Envelope construction — the meta flags plus the confidence/margin/entropy
+// facts a proof tree grounds — is the kernel adapter's job (ADR-005: Go
+// computes, the policy gates).
 func (g *Gate) Route(ctx context.Context, caseID string, dec *Decision, th Thresholds) (string, error) {
 	before := atomic.LoadInt32(&g.executed)
 
-	top, ok := dec.Distribution[dec.Choice]
-	if !ok {
-		top = 0
-	}
-	env := core.NewEnvelope(RouteTicketInput{CaseID: caseID, Choice: dec.Choice})
-	env.Metadata = map[string]any{}
-	if top < th.Review {
-		env.Metadata["below_review"] = "true"
-	}
-	if top < th.Auto {
-		env.Metadata["below_auto"] = "true"
-	}
-	if th.Auto <= top && top-decSecond(dec) < th.Margin {
-		env.Metadata["thin_margin"] = "true" // advisory only: T2 never blocks
-	}
-	env.Facts = append(env.Facts,
-		fmt.Sprintf("confidence(%q).", strconv.FormatFloat(top, 'f', 3, 64)),
-		fmt.Sprintf("margin_value(%q).", strconv.FormatFloat(top-decSecond(dec), 'f', 3, 64)),
-		fmt.Sprintf("entropy_value(%q).", strconv.FormatFloat(dec.Entropy, 'f', 3, 64)),
-	)
+	env := scoring.Request(RouteTicketInput{CaseID: caseID, Choice: dec.Choice}, dec, th)
 
 	_, err := g.client.ExecuteByName(ctx, "route_ticket", env)
 	ran := atomic.LoadInt32(&g.executed) > before
@@ -166,6 +117,26 @@ func (g *Gate) Route(ctx context.Context, caseID string, dec *Decision, th Thres
 	}
 }
 
+// RouteUnobserved handles the case where the scorer could not observe every
+// option's probability (a hosted API's top_logprobs was truncated). The
+// decision to refuse auto-routing is the POLICY's, via the
+// unobserved_distribution rule — not a Go fallback that invents a number.
+func (g *Gate) RouteUnobserved(ctx context.Context, caseID string) (string, error) {
+	before := atomic.LoadInt32(&g.executed)
+	// A nil Decision is how the adapter says "no distribution was observable":
+	// Request publishes unobserved_distribution and no numbers at all.
+	env := scoring.Request(RouteTicketInput{CaseID: caseID, Choice: "?"}, nil, Thresholds{})
+	_, err := g.client.ExecuteByName(ctx, "route_ticket", env)
+	ran := atomic.LoadInt32(&g.executed) > before
+	if err == nil {
+		return "", errors.New("unobserved-distribution route unexpectedly allowed")
+	}
+	if ran || !core.IsPolicyViolationError(err) {
+		return "", fmt.Errorf("unobserved-distribution route: %w", err)
+	}
+	return OutcomeEscalate, nil
+}
+
 // RouteNoChoice models the generation lane's OTHER/ESCALATE escape hatch:
 // no parsable choice, so the policy must halt — refusing to guess is a
 // governed decision, not Go code.
@@ -192,20 +163,4 @@ func containsRule(err *core.PolicyViolationError, needle string) bool {
 		}
 	}
 	return false
-}
-
-func decSecond(dec *Decision) float64 {
-	best, second := -1.0, -1.0
-	for _, v := range dec.Distribution {
-		if v >= best {
-			second = best
-			best = v
-		} else if v > second {
-			second = v
-		}
-	}
-	if second < 0 {
-		return 0
-	}
-	return second
 }

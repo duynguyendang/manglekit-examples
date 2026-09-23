@@ -30,15 +30,18 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/duynguyendang/manglekit"
 	"github.com/duynguyendang/manglekit-examples/governance/fixed_choice_router/datasets"
+	"github.com/duynguyendang/manglekit/adapters/scoring"
 )
 
 // optionLetters are the single-token answer labels; the tokenizer check in
@@ -113,20 +116,102 @@ func main() {
 	}
 }
 
-// newScorer picks the backend: a live OpenAI-compatible server only when the
-// env contract is fully set, the deterministic mock otherwise (the default
-// everyone runs — repo contract: no GPU/API keys required).
+// newScorer picks the scoring backend. Default is the deterministic mock —
+// the repo contract is that examples and tests run with no GPU and no keys.
+//
+// Two live paths, both opt-in:
+//
+//	MANGLE_SCORER=openai  (or OPENAI_API_KEY + MANGLE_SCORER=openai)
+//	                     key-only: /chat/completions with logprobs, the
+//	                     restricted softmax built client-side. No server.
+//	MANGLE_SCORER=sglang  (default when MANGLE_SCORER_BACKEND is set)
+//	                     SGLang native /v1/score + label_token_ids: the
+//	                     server does the restricted softmax. Needs a
+//	                     scoring server, but never truncates candidates.
 func newScorer(cases []datasets.Case) (Scorer, bool) {
-	if strings.TrimSpace(os.Getenv("MANGLE_SCORER_BACKEND")) != "" {
-		s, err := NewSGLangScorerFromEnv()
+	switch chooseBackend() {
+	case backendHosted:
+		s, err := scoring.NewChatScorer(scoring.ChatConfig{
+			BaseURL:     hostedBaseURL(),
+			APIKey:      os.Getenv("OPENAI_API_KEY"),
+			Model:       hostedModel(),
+			TopLogProbs: hostedTopLogProbs(),
+		})
 		if err != nil {
-			log.Fatalf("MANGLE_SCORER_BACKEND is set but the live scorer could not be built: %v", err)
+			log.Fatalf("MANGLE_SCORER=openai but the key-only scorer could not be built: %v", err)
+		}
+		fmt.Printf("scorer backend: key-only chat logprobs (model %s @ %s, top_logprobs=%d)\n", s.Model, s.BaseURL, s.TopLogProbs)
+		return s, true
+	case backendSGLang:
+		base := strings.TrimRight(os.Getenv("MANGLE_SCORER_BACKEND"), "/")
+		s, err := scoring.NewScoreServer(scoring.ScoreConfig{
+			BaseURL:     base,
+			Model:       os.Getenv("MANGLE_SCORER_MODEL"),
+			Tokenizer:   scoring.NewHTTPTokenizer(base, nil),
+			SpacePrefix: os.Getenv("MANGLE_SCORER_SPACE") == "1",
+		})
+		if err != nil {
+			log.Fatalf("SGLang scorer could not be built: %v", err)
 		}
 		fmt.Printf("scorer backend: live %s (model %s)\n", s.BaseURL, s.Model)
 		return s, true
+	default:
+		fmt.Println("scorer backend: deterministic mock (MANGLE_SCORER=openai for key-only chat logprobs; MANGLE_SCORER_BACKEND=... for a /v1/score server)")
+		return NewMockScorer(cases), false
 	}
-	fmt.Println("scorer backend: deterministic mock (set MANGLE_SCORER_BACKEND + MANGLE_SCORER_MODEL for a live /v1/score server)")
-	return NewMockScorer(cases), false
+}
+
+// hostedBaseURL / hostedModel / hostedTopLogProbs mirror the kernel's
+// OpenAI-compatible contract (OPENAI_BASE_URL, OPENAI_MODEL) so one env works
+// for both the scorer and the generation lane.
+func hostedBaseURL() string {
+	if base := strings.TrimRight(strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")), "/"); base != "" {
+		return base
+	}
+	return "https://api.openai.com/v1"
+}
+
+func hostedModel() string {
+	if m := strings.TrimSpace(os.Getenv("OPENAI_MODEL")); m != "" {
+		return m
+	}
+	return "gpt-4o-mini"
+}
+
+func hostedTopLogProbs() int {
+	if v := strings.TrimSpace(os.Getenv("MANGLE_LLM_TOP_LOGPROBS")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= len(optionLetters) {
+			return n
+		}
+		log.Printf("ignoring MANGLE_LLM_TOP_LOGPROBS=%q (want an int >= %d)", v, len(optionLetters))
+	}
+	return 20
+}
+
+type backendKind int
+
+const (
+	backendMock backendKind = iota
+	backendSGLang
+	backendHosted
+)
+
+// chooseBackend resolves the MANGLE_SCORER name, defaulting to SGLang when a
+// scoring server is configured (v0.10.3 behaviour) and to the mock otherwise.
+func chooseBackend() backendKind {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("MANGLE_SCORER"))) {
+	case "openai", "llm", "chat", "hosted":
+		return backendHosted
+	case "sglang", "score", "server":
+		return backendSGLang
+	case "mock":
+		return backendMock
+	default:
+		if strings.TrimSpace(os.Getenv("MANGLE_SCORER_BACKEND")) != "" {
+			return backendSGLang
+		}
+		return backendMock
+	}
 }
 
 // runTour walks 10 fixture cases across the decision shapes and, for the
@@ -147,9 +232,22 @@ func runTour(ctx context.Context, scorer Scorer, live bool, cases []datasets.Cas
 
 	picks := tourPicks(cases)
 	fmt.Printf("\n=== Tour: %d fixture cases through score -> restricted softmax -> policy gate ===\n\n", len(picks))
+
+	shots := make([]tourShot, 0, len(picks))
 	for _, c := range picks {
 		opts := optionsFor(c)
-		dec, err := scorer.Decide(ctx, BuildPrompt(c, opts), optionLetters, opts)
+		dec, err := scorer.Score(ctx, BuildPrompt(c, opts), optionLetters, opts)
+		if errors.Is(err, ErrLabelsUnobserved) {
+			// The distribution is unknowable for this case — let the policy
+			// refuse, exactly as it refuses an unparseable generation.
+			outcome, rerr := gate.RouteUnobserved(ctx, c.ID)
+			if rerr != nil {
+				return fmt.Errorf("route unobserved %s: %w", c.ID, rerr)
+			}
+			fmt.Printf("case %s\n  %v\n  -> %s\n", c.ID, err, outcome)
+			shots = append(shots, tourShot{c: c, outcome: outcome})
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("score %s: %w", c.ID, err)
 		}
@@ -161,6 +259,7 @@ func runTour(ctx context.Context, scorer Scorer, live bool, cases []datasets.Cas
 		fmt.Printf("  prompt-opt: %s\n", summarizeOptions(opts))
 		fmt.Printf("  P: %s  margin=%.3f entropy=%.3f\n", formatDist(dec.Distribution), dec.Margin, dec.Entropy)
 		fmt.Printf("  -> %s\n", outcome)
+		shots = append(shots, tourShot{c: c, dec: dec, outcome: outcome})
 	}
 
 	// The generation lane's escape hatch: no parsable choice -> the policy,
@@ -171,15 +270,22 @@ func runTour(ctx context.Context, scorer Scorer, live bool, cases []datasets.Cas
 	}
 	fmt.Printf("case tour-genlane-noparse (generation lane could not parse a letter)\n  -> %s\n\n", esc)
 
-	// Explainable deny: derive the halt from the same facts the gate saw.
-	blocked := picks[6] // a review-band case by construction
-	if err := explainBlocked(ctx, gate.client, scorer, blocked); err != nil {
+	// Explainable deny: pick a case the gate ACTUALLY held back under the
+	// live thresholds and replay the exact facts it saw. If every case
+	// cleared the bar, say so instead of manufacturing a deny.
+	blocked := firstBlocked(shots)
+	if blocked == nil {
+		fmt.Printf("=== Explainable deny: skipped — no case was held back under auto>=%.2f ===\n", th.Auto)
+		fmt.Println("    (every case cleared the bar; lower threshold(\"auto\") in policy.dl to see a proof tree)")
+		fmt.Println()
+	} else if err := explainBlocked(ctx, gate.client, th, *blocked); err != nil {
 		return err
 	}
 
-	// Micro hot-reload shot: the relaxed policy moves this same case from
-	// review to auto-route — no rebuild, no restart.
-	fmt.Println("=== Hot swap: ReloadPolicy(policy_relaxed.dl): threshold auto 0.80 -> 0.70 ===")
+	// Micro hot-reload shot: re-run the same scored cases under the relaxed
+	// policy and show how the mix moves. Reported as counts, so it stays
+	// honest whatever the fixture/backend shape happens to be.
+	fmt.Println("=== Hot swap: ReloadPolicy(policy_relaxed.dl) — same cases, relaxed thresholds ===")
 	if err := gate.client.ReloadPolicy(ctx, relaxedPolicyPath()); err != nil {
 		return fmt.Errorf("reload relaxed policy: %w", err)
 	}
@@ -187,16 +293,28 @@ func runTour(ctx context.Context, scorer Scorer, live bool, cases []datasets.Cas
 	if err != nil {
 		return err
 	}
-	opts := optionsFor(blocked)
-	dec, err := scorer.Decide(ctx, BuildPrompt(blocked, opts), optionLetters, opts)
-	if err != nil {
-		return err
+	before := countOutcomes(shots)
+	after := make(map[string]int)
+	for _, s := range shots {
+		if s.dec == nil { // unobserved cases stay escalated under any thresholds
+			after[s.outcome]++
+			continue
+		}
+		outcome, err := gate.Route(ctx, s.c.ID, s.dec, th2)
+		if err != nil {
+			return fmt.Errorf("re-route %s: %w", s.c.ID, err)
+		}
+		after[outcome]++
 	}
-	outcome, err := gate.Route(ctx, blocked.ID, dec, th2)
-	if err != nil {
-		return err
+	fmt.Printf("    thresholds now: auto>=%.2f review>=%.2f\n", th2.Auto, th2.Review)
+	for _, k := range []string{OutcomeAuto, OutcomeReview, OutcomeEscalate} {
+		arrow := ""
+		if after[k] != before[k] {
+			arrow = fmt.Sprintf("  (%+d)", after[k]-before[k])
+		}
+		fmt.Printf("    %-16s %d -> %d%s\n", k, before[k], after[k], arrow)
 	}
-	fmt.Printf("case %s with auto=%.2f: P=%.3f -> %s\n\n", blocked.ID, th2.Auto, dec.Distribution[dec.Choice], outcome)
+	fmt.Println()
 
 	// Fail-safe: a broken policy file is rejected; the active one keeps
 	// serving unchanged.
@@ -211,32 +329,67 @@ func runTour(ctx context.Context, scorer Scorer, live bool, cases []datasets.Cas
 	}
 	fmt.Println("policy.dl restored; the strict thresholds are back.")
 	if live {
-		fmt.Println("\n(live backend was used for scoring; rerun without MANGLE_SCORER_BACKEND for the deterministic demo)")
+		fmt.Println("\n(live backend was used for scoring; unset MANGLE_SCORER / MANGLE_SCORER_BACKEND for the deterministic demo)")
 	}
 	return nil
 }
 
-// explainBlocked renders the derivation tree for one review-band decision.
-func explainBlocked(ctx context.Context, client *manglekit.Client, scorer Scorer, c datasets.Case) error {
-	opts := optionsFor(c)
-	dec, err := scorer.Decide(ctx, BuildPrompt(c, opts), optionLetters, opts)
-	if err != nil {
-		return err
+// tourShot is one tour case with the decision it scored and the outcome the
+// gate returned — kept so the Explain and hot-swap sections replay the SAME
+// numbers the gate saw, never a re-scored approximation.
+type tourShot struct {
+	c       datasets.Case
+	dec     *Decision
+	outcome string
+}
+
+// firstBlocked returns the first case the gate actually held back (review
+// preferred, since that is the threshold-bound story).
+func firstBlocked(shots []tourShot) *tourShot {
+	for i := range shots {
+		if shots[i].outcome == OutcomeReview && shots[i].dec != nil {
+			return &shots[i]
+		}
 	}
-	top := dec.Distribution[dec.Choice]
+	for i := range shots {
+		if shots[i].outcome == OutcomeEscalate && shots[i].dec != nil {
+			return &shots[i]
+		}
+	}
+	return nil
+}
+
+func countOutcomes(shots []tourShot) map[string]int {
+	m := map[string]int{}
+	for _, s := range shots {
+		m[s.outcome]++
+	}
+	return m
+}
+
+// explainBlocked renders the derivation tree for one case the gate held back,
+// feeding Explain exactly the facts the pre-check saw.
+func explainBlocked(ctx context.Context, client *manglekit.Client, th Thresholds, s tourShot) error {
+	top := s.dec.Distribution[s.dec.Choice]
 	facts := []string{
 		`action_operation("Req", "route_ticket").`,
-		`meta("below_auto", "true").`,
 		fmt.Sprintf("confidence(%q).", fmt.Sprintf("%.3f", top)),
-		fmt.Sprintf("margin_value(%q).", fmt.Sprintf("%.3f", dec.Margin)),
+	}
+	switch s.outcome {
+	case OutcomeReview:
+		facts = append(facts, `meta("below_auto", "true").`)
+	case OutcomeEscalate:
+		facts = append(facts, `meta("below_review", "true").`)
 	}
 	expl, err := client.Explain(ctx, `halt("Req", Reason, Tier)`, facts)
 	if err != nil {
 		return fmt.Errorf("explain: %w", err)
 	}
-	fmt.Printf("=== Why %s was NOT auto-route (client.Explain proof tree) ===\n", c.ID)
+	fmt.Printf("=== Why %s became %s (client.Explain proof tree) ===\n", s.c.ID, s.outcome)
 	fmt.Printf("derived: %v\n", expl.Outcome)
 	fmt.Println(expl.String())
+	fmt.Printf("    the rule bound P=%s against the policy's own bar (auto=%.2f, review=%.2f)\n\n",
+		fmt.Sprintf("%.3f", top), th.Auto, th.Review)
 	return nil
 }
 

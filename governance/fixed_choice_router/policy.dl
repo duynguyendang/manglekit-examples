@@ -52,6 +52,15 @@ halt("Req", "no_valid_choice_escalate", "T1") :-
     action_operation("Req", "route_ticket"),
     meta("no_valid_choice", "true").
 
+% --- T1: the distribution itself is unknowable --------------------------
+% A hosted API returns only the TOP-K candidate tokens; if an option letter
+% is not among them its probability cannot be observed, so no threshold
+% comparison is meaningful. The blog's Python would silently softmax over
+% whatever it got. Here the policy refuses and escalates.
+halt("Req", "unobserved_distribution_escalate", "T1") :-
+    action_operation("Req", "route_ticket"),
+    meta("unobserved_distribution", "true").
+
 % --- T2 advisory: confident but a thin lead over the runner-up ---------
 % Explicitly tagged T2: VISIBLE in Explain, never blocks. Under a 3-way
 % softmax the margin gate is mostly dominated by the confidence gate; it

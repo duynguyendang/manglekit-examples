@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"text/tabwriter"
 	"time"
@@ -12,7 +15,8 @@ import (
 	"github.com/duynguyendang/manglekit-examples/governance/fixed_choice_router/datasets"
 )
 
-// LaneResult accumulates one lane's benchmark statistics.
+// LaneResult accumulates one lane's benchmark statistics. Each lane owns its
+// result and is written by exactly one goroutine, so no locking is needed.
 type LaneResult struct {
 	Name     string
 	Total    int
@@ -20,6 +24,8 @@ type LaneResult struct {
 	Review   int
 	Escalate int
 	Wrong    int // choice != gold (regardless of gate outcome)
+	Errors   int // calls that failed outright — reported, never swallowed
+	FirstErr error
 	Latency  []time.Duration
 	Tokens   int64 // completion tokens (generation lane only)
 }
@@ -53,6 +59,10 @@ func percentile(ds []time.Duration, q float64) time.Duration {
 // start barrier, scoring vs generation, same policy, same fixtures, same
 // (live) server.
 //
+// Each lane gets its OWN gate: the two lanes run concurrently, and a shared
+// client would share the dispatch counter that proves "a halt means it never
+// ran" — the before/after comparison would race and report phantom failures.
+//
 // Mock mode deliberately suppresses the latency/throughput columns: mock
 // timings measure nothing and publishing them would be the exact
 // credibility trap the blog's commenters set off. Run with the live env to
@@ -63,23 +73,27 @@ func runBenchmark(ctx context.Context, scorer Scorer, live bool, cases []dataset
 	}
 	set := cases[:limit]
 
-	gate, err := NewClientWithPolicy(ctx, policyPath())
+	gateS, err := NewClientWithPolicy(ctx, policyPath())
 	if err != nil {
 		return err
 	}
-	defer gate.Shutdown(ctx)
-	th, err := ReadThresholds(ctx, gate.client)
+	defer gateS.Shutdown(ctx)
+	gateG, err := NewClientWithPolicy(ctx, policyPath())
+	if err != nil {
+		return err
+	}
+	defer gateG.Shutdown(ctx)
+	th, err := ReadThresholds(ctx, gateS.client)
 	if err != nil {
 		return err
 	}
 
-	gen, _ := newGenerator(live, set)
+	gen, _ := newGenerator(set)
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	var laneS, laneG LaneResult
 	laneS.Name, laneG.Name = "scoring", "generation"
-	var mu sync.Mutex
 
 	runLane := func(res *LaneResult, work func(ctx context.Context, c datasets.Case) (choice string, outcome string, tokens int64, err error)) {
 		defer wg.Done()
@@ -87,14 +101,17 @@ func runBenchmark(ctx context.Context, scorer Scorer, live bool, cases []dataset
 		for _, c := range set {
 			t0 := time.Now()
 			choice, outcome, tokens, err := work(ctx, c)
+			d := time.Since(t0)
 			if err != nil {
-				mu.Lock()
-				res.Total++ // counts as a failed case, still reported
-				mu.Unlock()
+				// Never swallow a failure: a benchmark whose error lane is
+				// invisible reports a clean run over a broken one.
+				res.Errors++
+				if res.FirstErr == nil {
+					res.FirstErr = fmt.Errorf("case %s: %w", c.ID, err)
+				}
+				res.Total++
 				continue
 			}
-			d := time.Since(t0)
-			mu.Lock()
 			res.Total++
 			switch outcome {
 			case OutcomeAuto:
@@ -111,13 +128,12 @@ func runBenchmark(ctx context.Context, scorer Scorer, live bool, cases []dataset
 				res.Latency = append(res.Latency, d)
 				res.Tokens += tokens
 			}
-			mu.Unlock()
 		}
 	}
 
 	wg.Add(2)
-	go runLane(&laneS, scoreLaneWork(scorer, gate, th))
-	go runLane(&laneG, generateLaneWork(gen, gate))
+	go runLane(&laneS, scoreLaneWork(scorer, gateS, th))
+	go runLane(&laneG, generateLaneWork(gen, gateG))
 	close(start) // barrier: both lanes fire together, blog-style
 	wg.Wait()
 
@@ -125,7 +141,7 @@ func runBenchmark(ctx context.Context, scorer Scorer, live bool, cases []dataset
 	fmt.Printf("policy: auto>=%.2f margin>=%.2f review>=%.2f\n", th.Auto, th.Margin, th.Review)
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	if live {
-		fmt.Fprintln(w, "lane\ttotal\taccuracy\tescalate+review\tp50\tp95\tthroughput(s/s)\ttokens/case")
+		fmt.Fprintln(w, "lane\ttotal\terrors\taccuracy\tescalate+review\tp50\tp95\tthroughput(s/s)\ttokens/case")
 		for _, r := range []LaneResult{laneS, laneG} {
 			window := totalWindow(r.Latency)
 			tps := 0.0
@@ -136,17 +152,17 @@ func runBenchmark(ctx context.Context, scorer Scorer, live bool, cases []dataset
 			if r.Total > 0 {
 				tokensPerCase = float64(r.Tokens) / float64(r.Total)
 			}
-			fmt.Fprintf(w, "%s\t%d\t%.1f%%\t%.1f%%\t%s\t%s\t%.1f\t%.1f\n",
-				r.Name, r.Total, r.accuracy()*100, r.escalateRate()*100,
+			fmt.Fprintf(w, "%s\t%d\t%d\t%.1f%%\t%.1f%%\t%s\t%s\t%.1f\t%.1f\n",
+				r.Name, r.Total, r.Errors, r.accuracy()*100, r.escalateRate()*100,
 				percentile(r.Latency, 0.50).Round(time.Microsecond*100),
 				percentile(r.Latency, 0.95).Round(time.Microsecond*100),
 				tps, tokensPerCase)
 		}
 	} else {
-		fmt.Fprintln(w, "lane\ttotal\taccuracy\tauto\treview\tescalate")
+		fmt.Fprintln(w, "lane\ttotal\terrors\taccuracy\tauto\treview\tescalate")
 		for _, r := range []LaneResult{laneS, laneG} {
-			fmt.Fprintf(w, "%s\t%d\t%.1f%%\t%d\t%d\t%d\n",
-				r.Name, r.Total, r.accuracy()*100, r.Auto, r.Review, r.Escalate)
+			fmt.Fprintf(w, "%s\t%d\t%d\t%.1f%%\t%d\t%d\t%d\n",
+				r.Name, r.Total, r.Errors, r.accuracy()*100, r.Auto, r.Review, r.Escalate)
 		}
 	}
 	if err := w.Flush(); err != nil {
@@ -157,6 +173,17 @@ func runBenchmark(ctx context.Context, scorer Scorer, live bool, cases []dataset
 	}
 	fmt.Println("lane S = restricted-softmax scoring + policy gate (Jev's inference path, governed)")
 	fmt.Println("lane G = generate-then-parse (letter in the first 100 chars); a choice it cannot parse escalates via the no_valid_choice rule")
+
+	// A benchmark that hides its failures reports a clean run over a broken
+	// one. Surface them, and fail the command.
+	for _, r := range []LaneResult{laneS, laneG} {
+		if r.Errors > 0 {
+			fmt.Printf("!! %s lane: %d/%d calls errored; first: %v\n", r.Name, r.Errors, r.Total, r.FirstErr)
+		}
+	}
+	if laneS.Errors > 0 || laneG.Errors > 0 {
+		return fmt.Errorf("benchmark incomplete: %d scoring + %d generation errors", laneS.Errors, laneG.Errors)
+	}
 	return nil
 }
 
@@ -165,7 +192,13 @@ func runBenchmark(ctx context.Context, scorer Scorer, live bool, cases []dataset
 func scoreLaneWork(scorer Scorer, gate *Gate, th Thresholds) func(context.Context, datasets.Case) (string, string, int64, error) {
 	return func(ctx context.Context, c datasets.Case) (string, string, int64, error) {
 		opts := optionsFor(c)
-		dec, err := scorer.Decide(ctx, BuildPrompt(c, opts), optionLetters, opts)
+		dec, err := scorer.Score(ctx, BuildPrompt(c, opts), optionLetters, opts)
+		if errors.Is(err, ErrLabelsUnobserved) {
+			// Unknowable distribution: the policy escalates it (T1), which is
+			// also what a truncated hosted API deserves.
+			outcome, rerr := gate.RouteUnobserved(ctx, c.ID)
+			return "", outcome, 0, rerr
+		}
 		if err != nil {
 			return "", "", 0, err
 		}
@@ -217,11 +250,25 @@ func generateLaneWork(gen Generator, gate *Gate) func(context.Context, datasets.
 	}
 }
 
-// newGenerator mirrors newScorer for the generation lane.
-func newGenerator(live bool, cases []datasets.Case) (Generator, bool) {
-	if live {
+// newGenerator mirrors newScorer for the generation lane: hosted API when the
+// scorer is hosted (same endpoint, same model, so the lanes stay comparable),
+// the SGLang server when that is configured, otherwise the mock.
+func newGenerator(cases []datasets.Case) (Generator, bool) {
+	switch chooseBackend() {
+	case backendHosted:
+		model := strings.TrimSpace(os.Getenv("OPENAI_MODEL"))
+		if model == "" {
+			model = "gpt-4o-mini"
+		}
+		g, err := NewHostedGeneratorFromEnv(model)
+		if err != nil {
+			log.Fatalf("MANGLE_SCORER=openai but the hosted generator could not be built: %v", err)
+		}
+		fmt.Printf("generation lane: hosted %s (model %s)\n", g.Endpoint, g.Model)
+		return g, true
+	case backendSGLang:
 		if g, ok := NewSGLangGeneratorFromEnv(); ok {
-			fmt.Printf("generation lane: live %s /v1/chat/completions (model %s)\n", g.BaseURL, g.Model)
+			fmt.Printf("generation lane: live %s (model %s)\n", g.Endpoint, g.Model)
 			return g, true
 		}
 	}

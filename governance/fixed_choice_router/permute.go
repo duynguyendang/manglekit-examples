@@ -45,7 +45,7 @@ func runPermutation(ctx context.Context, scorer Scorer, live bool, cases []datas
 	if len(subset) > 20 {
 		subset = subset[:20] // measurement over a subset; 300x6 in mock buys nothing
 	}
-	gen, _ := newGenerator(live, cases)
+	gen, _ := newGenerator(cases)
 
 	fmt.Printf("\n=== Permutation flip-rate over %d cases x 6 option orderings ===\n", len(subset))
 
@@ -56,7 +56,7 @@ func runPermutation(ctx context.Context, scorer Scorer, live bool, cases []datas
 		scoreChoices := map[string]bool{}
 		for _, p := range permutations6 {
 			perm := permutedOptions(opts, p)
-			dec, err := scorer.Decide(ctx, BuildPrompt(c, perm), optionLetters, perm)
+			dec, err := scorer.Score(ctx, BuildPrompt(c, perm), optionLetters, perm)
 			if err != nil {
 				return fmt.Errorf("score %s: %w", c.ID, err)
 			}
@@ -110,7 +110,7 @@ func AverageOverPermutations(ctx context.Context, scorer Scorer, c datasets.Case
 	acc := map[string]float64{}
 	for _, p := range permutations6 {
 		perm := permutedOptions(opts, p)
-		dec, err := scorer.Decide(ctx, BuildPrompt(c, perm), optionLetters, perm)
+		dec, err := scorer.Score(ctx, BuildPrompt(c, perm), optionLetters, perm)
 		if err != nil {
 			return nil, err
 		}

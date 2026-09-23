@@ -34,7 +34,7 @@ func runCalibration(ctx context.Context, scorer Scorer, live bool, cases []datas
 	obs := make([]calObservation, 0, len(cases))
 	for _, c := range cases {
 		opts := optionsFor(c)
-		dec, err := scorer.Decide(ctx, BuildPrompt(c, opts), optionLetters, opts)
+		dec, err := scorer.Score(ctx, BuildPrompt(c, opts), optionLetters, opts)
 		if err != nil {
 			return fmt.Errorf("score %s: %w", c.ID, err)
 		}

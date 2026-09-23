@@ -29,66 +29,102 @@ Then it does the things the blog could not:
 
 ```bash
 cd manglekit-examples
-go run ./governance/fixed_choice_router/            # the tour (mock, no keys)
+go run ./governance/fixed_choice_router/                     # tour: score -> gate -> Explain (mock)
 go run ./governance/fixed_choice_router/ --mode=bench        # two-lane benchmark (Trục A)
 go run ./governance/fixed_choice_router/ --mode=threshold    # threshold effect (Trục B)
 go run ./governance/fixed_choice_router/ --mode=calibrate    # reliability + ECE + temperature
 go run ./governance/fixed_choice_router/ --mode=permute      # permutation flip-rate
+
+# same five modes, real model, API key only (no server):
+MANGLE_SCORER=openai OPENAI_API_KEY=sk-... OPENAI_MODEL=gpt-4o-mini \
+  go run ./governance/fixed_choice_router/ --mode=bench
+
+# ...or the exact blog path, with a scoring server:
+MANGLE_SCORER_BACKEND=http://localhost:30000 MANGLE_SCORER_MODEL=qwen/qwen3-4b-instruct \
+  go run ./governance/fixed_choice_router/ --mode=bench
 ```
 
-### Two modes — and what each one proves
+### Three modes — and what each one proves
 
 | Mode | Backend | Proves |
 |---|---|---|
-| **default** | deterministic `MockScorer` replaying `datasets/fixtures.jsonl` | the **gate mechanics**: distribution → thresholds → halt/allow, with proof trees. Works with zero GPU/keys — this is what CI runs. |
-| **live** (`MANGLE_SCORER_BACKEND=http://localhost:30000`, `MANGLE_SCORER_MODEL=...`) | OpenAI-compatible `/v1/score` (SGLang) + `/v1/chat/completions` | real model numbers: accuracy, **latency/throughput**, order sensitivity. |
+| **default** (mock) | deterministic `MockScorer` replaying `datasets/fixtures.jsonl` | the **gate mechanics**: distribution → thresholds → halt/allow, with proof trees. Zero GPU, zero keys — this is what CI runs. |
+| **key-only** — `MANGLE_SCORER=openai` + `OPENAI_API_KEY` | hosted `/chat/completions` with `logprobs: true, top_logprobs: K` | the **real Jev distribution without standing up a server**: request one token, read the option labels out of the returned log-probabilities, renormalize client-side over exactly those labels. API key, no GPU. |
+| **score server** — `MANGLE_SCORER_BACKEND=http://localhost:30000` + `MANGLE_SCORER_MODEL=...` | SGLang native `/v1/score` (`label_token_ids`) | the exact blog path: the server restricts the softmax to the label IDs you name, so **no candidate can ever be missing**. Needs a scoring server. |
 
 > **Honesty rule baked into the output:** latency and throughput columns are
 > only printed in live mode — mock timings measure the mock, not a model.
 > Accuracy in mock mode validates the mechanism against synthetic labels;
 > it is not a claim about any real model's quality. Published blog numbers
-> belong to the blog's hardware; run `live` to get yours.
+> belong to the blog's hardware; run live to get yours.
+
+### Why the key-only path can escalate — and why that is the right design
+
+`top_logprobs` is a **truncated** view of the vocabulary: the provider returns
+only the K highest-probability tokens at the answer position. If an option
+letter is not among them, its probability is *unobservable* — and normalizing
+over the survivors would silently overstate confidence, which is exactly the
+failure the blog's critics warned about.
+
+So the kernel's `scoring.ChatScorer` returns `scoring.ErrLabelsUnobserved`, and
+this example routes that case through the policy instead of inventing a number
+in Go:
+
+```datalog
+halt("Req", "unobserved_distribution_escalate", "T1") :-
+    action_operation("Req", "route_ticket"),
+    meta("unobserved_distribution", "true").
+```
+
+The refusal to auto-route is a governed decision with its own proof tree.
+Raise `MANGLE_LLM_TOP_LOGPROBS` where the provider allows, or use the
+`/v1/score` server, to make it never happen.
 
 ## The Jev inference path, mapped
 
 ```text
 1. enumerate options A/B/C as single-token labels
 2. one forward pass, read the probability of each label token at the answer
-   position  ->  SGLang POST /v1/score
-   {model, query, items, label_token_ids: [<id A>,<id B>,<id C>], apply_softmax: true}
-   ->  {"scores": [[pA, pB, pC]]}          # server-side restricted softmax,
-                                            # exactly the blog's step 4
-3. normalize defensively in Go (restrictedSoftmax) -> Decision{Choice,
-   Distribution, Margin, Entropy}
+   position. Two ways to get it (kernel adapters/scoring):
+     a) /v1/score  {model, query, items, label_token_ids, apply_softmax:true}
+        -> {"scores": [[pA, pB, pC]]}       # server-side restricted softmax
+     b) /chat/completions {max_tokens:1, logprobs:true, top_logprobs:K}
+        -> read the labels out of top_logprobs, exp + renormalize client-side
+3. scoring.Build(...) -> Decision{Choice, Distribution, Margin, Entropy}
+   (renormalizes over exactly the options; discards every other token)
 4. publish the numbers to the policy (Go computes flags, the engine gates —
    see policy.dl header for why threshold/2 is rule-defined, not a bare fact)
 5. T1 halts: review floor / auto threshold / no-parse escape hatch
    T2 advisory: thin margin (visible in Explain, never blocks)
 ```
 
-Tokenization is checked before scoring: a label that does not occupy exactly
-one token (`" A"` vs `"A"` land on different token IDs) is **rejected** —
-see `validateSingleTokens` in `scoring.go`.
+Tokenization is checked before scoring on the `/v1/score` path: a label that
+does not occupy exactly one token (`" A"` vs `"A"` land on different token IDs)
+is **rejected** — `scoring.ValidateSingleTokens`, checked against the surface
+actually sent (so `SpacePrefix` cannot bypass it).
 
 ## Parity matrix — blog ↔ this example
 
 | Blog (Jev-style recipe) | Manglekit equivalent | Where |
 |---|---|---|
-| SGLang `/v1/score` + `label_token_ids` | `SGLangScorer` (1 request/case, server-side restricted softmax over the label IDs) | `scoring.go` |
-| Restricted softmax over A/B/C | same, + defensive renorm + single-token label validation | `scoring.go` |
+| SGLang `/v1/score` + `label_token_ids` | `scoring.ScoreServer` (1 request/case, server-side restricted softmax over the label IDs) | kernel `adapters/scoring` |
+| Restricted softmax over A/B/C | `scoring.Build` — renormalizes over exactly the options, + single-token label validation | kernel `adapters/scoring` |
+| *(blog needs a scoring server)* | `scoring.ChatScorer`: `/chat/completions` + `logprobs`/`top_logprobs`, labels read client-side — **API key only, no server** | kernel `adapters/scoring` |
 | Thresholds in Python code | `threshold(Name, Value)` in Datalog, hot-reloadable | `policy.dl` |
 | `if p < 0.70: "send to review"` | T1 `halt` rule + `client.Explain` proof tree with P/T bindings | `policy.dl`, `gate.go`, `main.go` |
-| OTHER/ESCALATE escape hatch | `no_valid_choice` T1 rule — refusing to guess is a governed decision | `policy.dl`, `gate.go` |
+| OTHER/ESCALATE escape hatch | `no_valid_choice` + `unobserved_distribution` T1 rules — refusing to guess is a governed decision | `policy.dl`, `gate.go` |
 | 100-case two-lane benchmark (scoring vs generation, barrier + concurrent) | `--mode=bench`, 300 cases (3 × 100 the blog used) | `bench.go` |
 | *(missing in blog)* calibration | reliability table, ECE, temperature scaling (1 scalar, grid search) | `calibration.go` |
 | *(missing in blog)* order robustness | permutation flip-rate (options permuted **in the prompt text**) + average-over-permutations mitigation | `permute.go` |
 | *(missing in blog)* audit | supervised action: a T1 halt proves `route_ticket` never ran | `gate.go`, `main_test.go` |
-| *(missing in blog)* zero-key reproducibility | mock backend + committed fixtures; live smoke test is env-gated (`t.Skip`) | `datasets/`, `bench_test.go` |
+| *(missing in blog)* zero-key reproducibility | mock backend + committed fixtures; live smoke tests are env-gated (`t.Skip`) | `datasets/`, `bench_test.go`, `hosted_test.go` |
+| *(missing in blog)* errors cannot hide | each lane owns its gate; errored calls are counted, printed and fail the run | `bench.go` |
 
-Scope note on backends: **live mode implements SGLang `/v1/score`**. The
-`Scorer` interface is portable by design (vLLM `prompt_logprobs` and
-LightLLM expose the same quantity), but those adapters are **not
-implemented here** — only what is listed in this table exists.
+Scope note on backends: three scorers exist — this example's `MockScorer` (CI),
+and the kernel's `scoring.ChatScorer` (hosted chat logprobs, key-only) and
+`scoring.ScoreServer` (native `/v1/score`). The `scoring.Scorer` interface is
+portable further (vLLM `prompt_logprobs`, LightLLM expose the same quantity),
+but those adapters are **not implemented** — only what is listed here exists.
 
 ## Two axes, kept apart
 
@@ -103,21 +139,42 @@ implemented here** — only what is listed in this table exists.
 ## Files
 
 ```text
-main.go              # tour: score -> gate -> Explain -> micro hot-reload
-scoring.go           # Scorer/Tokenizer interfaces; MockScorer; SGLangScorer
+main.go              # tour: score -> gate -> Explain -> hot swap -> fail-safe reload
+scoring.go           # example glue only: Decision/Scorer aliases, MockScorer, MockTokenizer
 generate.go          # Generator for lane G; MockGenerator (simulated primacy bias); SGLangGenerator
-gate.go              # threshold reading, supervised route_ticket, outcome mapping
+gate.go              # supervised route_ticket + outcome mapping (thresholds via the kernel adapter)
 policy.dl            # strict thresholds (rule-defined, see header)
 policy_relaxed.dl    # relaxed twin for the hot-swap demo
 policy_broken.dl     # intentionally invalid — used by the fail-safe test
-bench.go             # Trục A: barrier-synchronized two-lane harness
-threshold_demo.go    # Trục B: ReloadPolicy + fail-safe + escalation-mix table
+bench.go             # Truc A: barrier-synchronized two-lane harness (one gate per lane)
+threshold_demo.go    # Truc B: ReloadPolicy + fail-safe + escalation-mix table
 calibration.go       # reliability bins, ECE, temperature scaling (1 scalar)
 permute.go           # flip-rate measurement + AverageOverPermutations
 datasets/            # package datasets: deterministic generator + committed fixtures.jsonl
 main_test.go         # contract tests (mock-only, CI-green without keys)
 bench_test.go        # bench/threshold/calibration/permute tests + env-gated live smoke
+hosted_test.go       # the key-only path through THIS gate, incl. truncated-distribution escape
 ```
+
+### What lives in the kernel vs here
+
+The scoring machinery is no longer in this example — it is
+`manglekit/adapters/scoring` ([ADR-005](../../../../docs/adr/005-scoring-is-a-preparer.md)),
+and this package is its consumer:
+
+| Concern | Where |
+|---|---|
+| `Decision`, restricted softmax (`Build`), single-token label validation | kernel `adapters/scoring` |
+| Key-only hosted scorer (`ChatScorer`, chat logprobs) and `/v1/score` scorer (`ScoreServer`), `HTTPTokenizer` | kernel `adapters/scoring` |
+| `ErrLabelsUnobserved` — truncated top-K yields no fabricated probability | kernel `adapters/scoring` |
+| Thresholds read from the active policy; ambiguity = hard error | kernel `ThresholdsFromPolicy` |
+| The gated envelope (meta flags + confidence/margin/entropy facts) | kernel `scoring.Request` |
+| Fixture-replaying mock, prompt building, calibration, permutation, benchmark, tour narrative | this example |
+
+Practical consequence: `MANGLE_SCORER=openai` needs **no scoring server** — just
+`OPENAI_API_KEY` (plus optional `OPENAI_BASE_URL`, `OPENAI_MODEL`,
+`MANGLE_LLM_TOP_LOGPROBS`). `MANGLE_SCORER_BACKEND` + `MANGLE_SCORER_MODEL`
+selects the `/v1/score` path instead, which cannot truncate candidates.
 
 ## Permutation design note
 
