@@ -4,7 +4,7 @@ go 1.25.1
 
 require (
 	github.com/dgraph-io/badger/v4 v4.9.1
-	github.com/duynguyendang/manglekit v0.10.3
+	github.com/duynguyendang/manglekit v0.11.0
 	github.com/firebase/genkit/go v1.13.1
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
