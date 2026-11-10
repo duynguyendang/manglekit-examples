@@ -15,7 +15,7 @@ import (
 func newTestClient(t *testing.T) (*manglekit.Client, context.Context) {
 	t.Helper()
 	ctx := context.Background()
-	policy := manglekit.MustReadFile("taint_policy.dl")
+	policy := manglekit.MustReadFile("taint_policy.mg")
 	client := manglekit.MustNewClient(ctx)
 	if err := client.LoadPolicy(ctx, string(policy)); err != nil {
 		t.Fatal(err)

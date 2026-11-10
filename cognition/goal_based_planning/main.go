@@ -96,15 +96,15 @@ func main() {
 	}
 
 	// 2. Load Planning Policy
-	policyBytes, err := os.ReadFile(filepath.Join(exampleDir(), "planning_rules.dl"))
+	policyBytes, err := os.ReadFile(filepath.Join(exampleDir(), "planning_rules.mg"))
 	if err != nil {
-		log.Fatalf("Failed to read planning_rules.dl: %v", err)
+		log.Fatalf("Failed to read planning_rules.mg: %v", err)
 	}
 
 	if err := client.Engine().LoadPolicy(ctx, string(policyBytes)); err != nil {
 		log.Fatalf("Failed to load planning policy: %v", err)
 	}
-	fmt.Println("Loaded planning_rules.dl policy with goal decomposition rules.")
+	fmt.Println("Loaded planning_rules.mg policy with goal decomposition rules.")
 	fmt.Println()
 
 	// 3. Plan for "deploy_to_production"
@@ -140,7 +140,7 @@ func main() {
 	fmt.Println("--- Executing deploy_to_production Plan ---")
 	registerDeployActions(client)
 	// The deploy steps are now SUPERVISED, so the Zero-Trust gate runs at each
-	// step. planning_rules.dl halts deploy_staging unless tests_passed=true and
+	// step. planning_rules.mg halts deploy_staging unless tests_passed=true and
 	// deploy_production unless has_approval=true; the MockAction stamps those
 	// prerequisite facts on its output so each gated successor sees them and the
 	// gate allows the step to proceed (see MockAction.Execute).

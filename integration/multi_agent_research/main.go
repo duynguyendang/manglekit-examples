@@ -192,7 +192,7 @@ func main() {
 	if err := system.LoadAgentDefinitions(ctx); err != nil {
 		log.Fatalf("LoadAgentDefinitions: %v", err)
 	}
-	custom, err := os.ReadFile(filepath.Join(exampleDir(), "research_agents.dlog"))
+	custom, err := os.ReadFile(filepath.Join(exampleDir(), "research_agents.mg"))
 	if err != nil {
 		log.Fatalf("read agents: %v", err)
 	}

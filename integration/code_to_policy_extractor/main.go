@@ -6,8 +6,8 @@
 //
 // CI mode (v0.9 exit-code contract):
 //
-//	go run . --emit-policy policy.dl        # write the standalone variant
-//	mkit eval --policy policy.dl --facts pr.nt --query 'halt(Req, Reason)'
+//	go run . --emit-policy policy.mg        # write the standalone variant
+//	mkit eval --policy policy.mg --facts pr.nt --query 'halt(Req, Reason)'
 //	# exit 0 = PR clean, exit 1 = policy-deny, 2 = usage error
 //
 // See ci_gate.sh for the copyable script and TestCIGateExitCodes for the
@@ -91,7 +91,7 @@ const archPolicy = `
 // review context is a local ground fact (not the SDK-injected
 // action_operation fact), and the data predicates carry NO Decl — mkit eval
 // auto-declares EDB predicates from the --facts graph. Keeping zero overlap
-// with std.dl Decls is deliberate: a re-declared predicate fails program
+// with std.mg Decls is deliberate: a re-declared predicate fails program
 // analysis (verified), so the CI variant must declare nothing std already
 // does. Corollary invariant: EVERY predicate a rule references (including
 // under negation) must appear in the facts graph too — unseen predicates

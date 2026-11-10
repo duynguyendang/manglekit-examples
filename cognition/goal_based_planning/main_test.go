@@ -18,9 +18,9 @@ func testExampleDir() string {
 
 func loadTestPolicy(t *testing.T, ctx context.Context, client *sdk.Client) {
 	t.Helper()
-	policyBytes, err := os.ReadFile(filepath.Join(testExampleDir(), "planning_rules.dl"))
+	policyBytes, err := os.ReadFile(filepath.Join(testExampleDir(), "planning_rules.mg"))
 	if err != nil {
-		t.Fatalf("Failed to read planning_rules.dl: %v", err)
+		t.Fatalf("Failed to read planning_rules.mg: %v", err)
 	}
 	if err := client.Engine().LoadPolicy(ctx, string(policyBytes)); err != nil {
 		t.Fatalf("Failed to load planning policy: %v", err)
@@ -156,7 +156,7 @@ func TestPlanOnboardUser(t *testing.T) {
 // (supervised) actions are the ones actually invoked for each plan step.
 //
 // A pure Engine().Assess demo would bypass the supervisor entirely; this
-// test exercises the governed path. planning_rules.dl has no halt rules for
+// test exercises the governed path. planning_rules.mg has no halt rules for
 // the deploy steps, so the plan proceeds and all 5 supervised actions run.
 func TestExecutePlanUsesSupervisedActions(t *testing.T) {
 	ctx := context.Background()
@@ -193,7 +193,7 @@ func TestExecutePlanUsesSupervisedActions(t *testing.T) {
 		}))
 	}
 
-	// planning_rules.dl halts deploy_staging unless tests_passed=true and
+	// planning_rules.mg halts deploy_staging unless tests_passed=true and
 	// deploy_production unless has_approval=true. Carry those facts so the
 	// supervised gate allows the plan to proceed and all 5 actions run.
 	deployEnv := core.NewEnvelope("deploy-request-001")

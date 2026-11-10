@@ -274,7 +274,7 @@ func TestTourRuns(t *testing.T) {
 		"-> escalate_human",
 		"low_confidence_send_to_review",
 		"< 800", // the policy's own comparison, grounded in the proof
-		"policy.dl restored",
+		"policy.mg restored",
 	} {
 		if !strings.Contains(tourOutput, want) {
 			t.Fatalf("tour output must contain %q, got:\n%s", want, tourOutput)

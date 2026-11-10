@@ -262,7 +262,7 @@ func (b *skillBrain) Verify(_ context.Context, frame *ooda.CognitiveFrame) (*cor
 				RuleName:   "halt_quality_check",
 				Predicate:  "halt",
 				Tier:       "T2",
-				SourceFile: "playbook.dl",
+				SourceFile: "playbook.mg",
 				Definition: `halt("Req", "outline missing", "T2")`,
 			}},
 		}, nil

@@ -104,7 +104,7 @@ func main() {
 	defer client.Shutdown(ctx)
 
 	// The extension point: the compiled Datalog is loaded like any other
-	// .dl policy — no special engine support is required.
+	// .mg policy — no special engine support is required.
 	if err := client.LoadPolicy(ctx, policy); err != nil {
 		log.Fatal(err)
 	}

@@ -13,7 +13,7 @@ import (
 
 func loadRoutingPolicy(t *testing.T, ctx context.Context, client *sdk.Client) {
 	t.Helper()
-	policyData, err := os.ReadFile("routing.dl")
+	policyData, err := os.ReadFile("routing.mg")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,7 @@
 % Routing policy — routes requests to specialized handlers by data type.
 % Uses value(Req, Payload) from toMangleFacts to bind Req.
-% Declares value/2 explicitly since it's not in std.dl.
-% Note: meta/2 is auto-declared in std.dl by the engine.
+% Declares value/2 explicitly since it's not in std.mg.
+% Note: meta/2 is auto-declared in std.mg by the engine.
 %
 % Tier priority: T1 (governance) outranks T3 (user/default).
 % The fallback rule uses T3 so it only wins when no T1 rule matches.

@@ -13,7 +13,7 @@
 // BYPASSES the supervisor and the action_operation/2 + meta/2 + label/1
 // injection. AssessPlan does not inject action_operation from an action
 // name, so each case APPENDS action_operation("Req", Name). to env.Facts
-// (see below) because gdpr_policy.dl gates halt rules on it — the
+// (see below) because gdpr_policy.mg gates halt rules on it — the
 // comment there explains why. The POST-CHECK (Reflect) is fail-closed
 // since ADR-001; the proofs below rely on the PRE-CHECK (blocking tier).
 // AuditTrail bindings for halt/2 rules are empty (ROADMAP.md §13).
@@ -45,7 +45,7 @@ type Case struct {
 func main() {
 	ctx := context.Background()
 
-	policyData := manglekit.MustReadFile("gdpr_policy.dl")
+	policyData := manglekit.MustReadFile("gdpr_policy.mg")
 
 	client, err := sdk.NewClient(ctx)
 	if err != nil {
@@ -90,7 +90,7 @@ func main() {
 		env.SecurityLabels = tc.Labels
 		// AssessPlan does not inject action_operation from ActionMetadata
 		// (it passes core.ActionMetadata{} internally). Halt rules in
-		// gdpr_policy.dl require this fact, so the caller must append it.
+		// gdpr_policy.mg require this fact, so the caller must append it.
 		env.Facts = append(env.Facts, fmt.Sprintf("action_operation(%q, %q).", "Req", tc.Action))
 		for _, f := range tc.Facts {
 			env.Facts = append(env.Facts, f)

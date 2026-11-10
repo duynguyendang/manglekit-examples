@@ -10,7 +10,7 @@ import (
 
 func loadConstraints(t *testing.T, ctx context.Context, client *sdk.Client) {
 	t.Helper()
-	policyData, err := os.ReadFile("constraints.dl")
+	policyData, err := os.ReadFile("constraints.mg")
 	if err != nil {
 		t.Fatal(err)
 	}

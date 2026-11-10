@@ -11,7 +11,7 @@ import (
 
 func loadGDPRPolicy(t *testing.T, ctx context.Context, client *sdk.Client) {
 	t.Helper()
-	policyData, err := os.ReadFile("gdpr_policy.dl")
+	policyData, err := os.ReadFile("gdpr_policy.mg")
 	if err != nil {
 		t.Fatal(err)
 	}

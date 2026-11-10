@@ -42,9 +42,9 @@ func TestTransitiveAccessControl(t *testing.T) {
 	ctx := context.Background()
 	root := repoRoot()
 
-	policyData, err := os.ReadFile(filepath.Join(root, "hybrid_rag/policy.dl"))
+	policyData, err := os.ReadFile(filepath.Join(root, "hybrid_rag/policy.mg"))
 	if err != nil {
-		t.Fatalf("Failed to read policy.dl: %v", err)
+		t.Fatalf("Failed to read policy.mg: %v", err)
 	}
 
 	client := manglekit.Must(manglekit.NewClient(ctx))
@@ -107,9 +107,9 @@ func TestSupervisedActionExecution(t *testing.T) {
 	}
 	t.Cleanup(func() { client.Shutdown(ctx) })
 
-	policyData, err := os.ReadFile(filepath.Join(root, "hybrid_rag/policy.dl"))
+	policyData, err := os.ReadFile(filepath.Join(root, "hybrid_rag/policy.mg"))
 	if err != nil {
-		t.Fatalf("Failed to read policy.dl: %v", err)
+		t.Fatalf("Failed to read policy.mg: %v", err)
 	}
 	registerNoopPIIScan(t, client)
 	if err := client.LoadFromSource(ctx, string(policyData)); err != nil {
@@ -151,7 +151,7 @@ func TestSupervisedActionExecution(t *testing.T) {
 // action — this test proves that ordering.)
 //
 // We load a tiny inline policy (gated on a metadata flag we control) so the
-// test is independent of policy.dl and the data files.
+// test is independent of policy.mg and the data files.
 func TestPreCheckFailClosed(t *testing.T) {
 	ctx := context.Background()
 

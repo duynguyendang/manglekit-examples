@@ -33,7 +33,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	policy := manglekit.MustReadFile("jailbreak_proof_agent/taint_policy.dl")
+	policy := manglekit.MustReadFile("jailbreak_proof_agent/taint_policy.mg")
 	client := manglekit.MustNewClient(ctx)
 	defer client.Shutdown(ctx)
 

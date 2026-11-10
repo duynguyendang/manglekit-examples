@@ -68,7 +68,7 @@ type Document struct {
 // QueryRequest defines the input payload for our action. The mangle
 // tags drive the supervisor's Zero-Config Reflection: each tagged field
 // becomes a fact on the pre-check envelope (e.g. type("Req", "query")),
-// which is what policy.dl's halt rules are gated on.
+// which is what policy.mg's halt rules are gated on.
 type QueryRequest struct {
 	Type string `json:"type" mangle:"type"`
 	Text string `json:"text" mangle:"text"`
@@ -97,7 +97,7 @@ type CustomHybridMemory struct {
 }
 
 // maxMemoryHits is the maximum number of memory hits to track in policy metadata.
-// Must match the number of memory_hit_N rules in policy.dl.
+// Must match the number of memory_hit_N rules in policy.mg.
 const maxMemoryHits = 8
 
 // RecallWithFacts implements the optional interface to return metadata with security labels.
@@ -261,7 +261,7 @@ func main() {
 		log.Fatalf("Failed to register pii_scan external predicate: %v", err)
 	}
 
-	policyData := manglekit.MustReadFile("policy.dl")
+	policyData := manglekit.MustReadFile("policy.mg")
 	if err := client.LoadPolicy(ctx, string(policyData)); err != nil {
 		log.Fatalf("Failed to load policy: %v", err)
 	}
@@ -372,7 +372,7 @@ func runPIIScenario(ctx context.Context, client *sdk.Client, name, user string, 
 	//   2. Call ExecuteByName → supervised pre-check → inner action
 	//      → post-check (Reflect) evaluates halt("Output", ...). The
 	//      policy scopes PII to this request's content("Output", T)
-	//      atom (policy.dl), so the engine's registered pii_scan/1
+	//      atom (policy.mg), so the engine's registered pii_scan/1
 	//      external predicate only fires for THIS output, never a
 	//      lingering fact from a prior request.
 	//   3. If PII detected, the post-check surfaces a policy violation.
@@ -510,7 +510,7 @@ func runMultiTenantScenarios(ctx context.Context, client *sdk.Client) {
 	// primary policy (a full reload that intentionally discards the first
 	// policy's rules while preserving the loaded base facts). External
 	// predicates (pii_scan) are re-declared automatically on this path too.
-	codePolicyData := manglekit.MustReadFile("code_access_policy.dl")
+	codePolicyData := manglekit.MustReadFile("code_access_policy.mg")
 	if err := client.LoadFromSource(ctx, string(codePolicyData)); err != nil {
 		log.Fatalf("Failed to load code access policy: %v", err)
 	}

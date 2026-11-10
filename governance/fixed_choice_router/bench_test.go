@@ -49,17 +49,17 @@ func TestThresholdDemoMeasuresPolicyEffect(t *testing.T) {
 			t.Errorf("threshold demo: %v", err)
 		}
 	})
-	for _, want := range []string{"REJECTED", "old policy still active", "policy.dl", "policy_relaxed.dl"} {
+	for _, want := range []string{"REJECTED", "old policy still active", "policy.mg", "policy_relaxed.mg"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("threshold demo output must contain %q, got:\n%s", want, out)
 		}
 	}
 	// Direction, not exact percentages: the mix depends on the per-class bars
-	// in policy.dl, and pinning a number here would break every time a bar
+	// in policy.mg, and pinning a number here would break every time a bar
 	// moves. What must hold is that relaxing the bars auto-routes MORE and
 	// escalates no fewer.
-	strictAuto := parseAutoPct(t, out, "policy.dl")
-	relaxedAuto := parseAutoPct(t, out, "policy_relaxed.dl")
+	strictAuto := parseAutoPct(t, out, "policy.mg")
+	relaxedAuto := parseAutoPct(t, out, "policy_relaxed.mg")
 	if relaxedAuto <= strictAuto {
 		t.Fatalf("relaxing the auto bar (800 -> 700 per-mille) must increase the auto-routed share, got strict=%.1f%% relaxed=%.1f%%",
 			strictAuto, relaxedAuto)

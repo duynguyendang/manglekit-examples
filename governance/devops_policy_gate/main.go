@@ -171,11 +171,11 @@ func main() {
 
 	// QuickClient constructs the client and loads the policy file in one
 	// call, with typed errors for a missing file or an invalid policy.
-	client, err := manglekit.QuickClient(ctx, filepath.Join(exampleDir(), "security_gate.dl"))
+	client, err := manglekit.QuickClient(ctx, filepath.Join(exampleDir(), "security_gate.mg"))
 	if err != nil {
 		log.Fatalf("Failed to initialize client with security gate policy: %v", err)
 	}
-	fmt.Println("🛡️  Loaded security_gate.dl policy (governance + pre-computed checks).")
+	fmt.Println("🛡️  Loaded security_gate.mg policy (governance + pre-computed checks).")
 	fmt.Println()
 
 	// Register one supervised no-op action per operation name. Supervise wraps

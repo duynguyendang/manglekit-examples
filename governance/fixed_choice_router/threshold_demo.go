@@ -24,23 +24,23 @@ func runThresholdDemo(ctx context.Context, scorer Scorer, cases []datasets.Case)
 	}
 	defer gate.Shutdown(ctx)
 
-	strict, err := measureUnderPolicy(ctx, gate, scorer, cases, "policy.dl")
+	strict, err := measureUnderPolicy(ctx, gate, scorer, cases, "policy.mg")
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("\n=== Hot-swap: client.ReloadPolicy(policy_relaxed.dl) — same process ===")
+	fmt.Println("\n=== Hot-swap: client.ReloadPolicy(policy_relaxed.mg) — same process ===")
 	if err := gate.client.ReloadPolicy(ctx, relaxedPolicyPath()); err != nil {
 		return fmt.Errorf("reload relaxed: %w", err)
 	}
-	relaxed, err := measureUnderPolicy(ctx, gate, scorer, cases, "policy_relaxed.dl")
+	relaxed, err := measureUnderPolicy(ctx, gate, scorer, cases, "policy_relaxed.mg")
 	if err != nil {
 		return err
 	}
 
 	// Fail-safe: a broken program must be rejected and the live policy must
 	// keep serving — verified by re-measuring the threshold facts.
-	fmt.Println("=== Fail-safe: ReloadPolicy(policy_broken.dl) must be REJECTED ===")
+	fmt.Println("=== Fail-safe: ReloadPolicy(policy_broken.mg) must be REJECTED ===")
 	if err := gate.client.ReloadPolicy(ctx, brokenPolicyPath()); err == nil {
 		return fmt.Errorf("broken policy accepted — fail-safe reload is broken")
 	} else {

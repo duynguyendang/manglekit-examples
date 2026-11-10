@@ -6,7 +6,7 @@
 % ==========================================
 
 % Declare predicates for static analysis
-% Note: halt/2, triple/3, meta/2 are declared in std.dl (auto-loaded).
+% Note: halt/2, triple/3, meta/2 are declared in std.mg (auto-loaded).
 Decl requires(Req, Capability).
 Decl memory_hit(DocID).
 Decl user(User).

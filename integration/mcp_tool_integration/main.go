@@ -50,14 +50,14 @@ func main() {
 	}
 
 	// 2. Load MCP Policy
-	policyBytes, err := os.ReadFile(filepath.Join(exampleDir(), "mcp_policy.dl"))
+	policyBytes, err := os.ReadFile(filepath.Join(exampleDir(), "mcp_policy.mg"))
 	if err != nil {
-		log.Fatalf("Failed to read mcp_policy.dl: %v", err)
+		log.Fatalf("Failed to read mcp_policy.mg: %v", err)
 	}
 	if err := client.Engine().LoadPolicy(ctx, string(policyBytes)); err != nil {
 		log.Fatalf("Failed to load MCP policy: %v", err)
 	}
-	fmt.Println("Loaded mcp_policy.dl - gates MCP tool execution by path and operation type.")
+	fmt.Println("Loaded mcp_policy.mg - gates MCP tool execution by path and operation type.")
 	fmt.Println()
 
 	// 3. Configure MCP Server

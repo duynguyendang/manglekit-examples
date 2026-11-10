@@ -27,7 +27,7 @@ func setupClient(t *testing.T) *sdk.Client {
 
 	_, filename, _, _ := runtime.Caller(0)
 	dir := filepath.Dir(filename)
-	policyBytes, err := os.ReadFile(filepath.Join(dir, "security_gate.dl"))
+	policyBytes, err := os.ReadFile(filepath.Join(dir, "security_gate.mg"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -222,7 +222,7 @@ func buildMkit(t *testing.T) string {
 
 func runEvalGate(t *testing.T, mkit, facts string) (int, string) {
 	t.Helper()
-	policy := filepath.Join(t.TempDir(), "policy.dl")
+	policy := filepath.Join(t.TempDir(), "policy.mg")
 	if err := os.WriteFile(policy, []byte(ciPolicy), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestCIGateExitCodes(t *testing.T) {
 	}
 
 	// usage error stays 2 and is distinguishable from deny
-	cmd := exec.Command(mkit, "eval", "--policy", "/nonexistent.dl",
+	cmd := exec.Command(mkit, "eval", "--policy", "/nonexistent.mg",
 		"--facts", filepath.Join(dir, "testdata_clean.pr-graph.nt"), "--query", "halt(A)")
 	if err := cmd.Run(); err == nil {
 		t.Fatal("expected runtime error for missing policy")

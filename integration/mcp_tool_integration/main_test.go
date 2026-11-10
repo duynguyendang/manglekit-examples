@@ -23,7 +23,7 @@ func testClient(t *testing.T) *sdk.Client {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 	_, filename, _, _ := runtime.Caller(0)
-	policyPath := filepath.Join(filepath.Dir(filename), "mcp_policy.dl")
+	policyPath := filepath.Join(filepath.Dir(filename), "mcp_policy.mg")
 	policyBytes, err := os.ReadFile(policyPath)
 	if err != nil {
 		t.Fatalf("Failed to read policy: %v", err)

@@ -1,4 +1,4 @@
-% Relaxed twin of policy.dl — ONLY the bars move (auto 800 -> 700 per-mille,
+% Relaxed twin of policy.mg — ONLY the bars move (auto 800 -> 700 per-mille,
 % review 700 -> 600). Used by the threshold-effect demo (Trục B): reload this
 % file mid-run with client.ReloadPolicy and watch the mix change without a
 % rebuild. Because the comparisons live in the rules, a reload can also change

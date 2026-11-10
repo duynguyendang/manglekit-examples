@@ -11,7 +11,7 @@ normalizes over exactly those labels, and confidence thresholds decide
 Then it does the things the blog could not:
 
 - **Thresholds are policy, not code.** The `0.80 / 0.20 / 0.70` bars live in
-  `policy.dl`. `client.ReloadPolicy` swaps them in-process — no rebuild, no
+  `policy.mg`. `client.ReloadPolicy` swaps them in-process — no rebuild, no
   redeploy — and a **broken policy file is rejected fail-safe** while the old
   one keeps serving. The blog's version of this step is "edit Python and
   restart".
@@ -93,7 +93,7 @@ Raise `MANGLE_LLM_TOP_LOGPROBS` where the provider allows, or use the
 3. scoring.Build(...) -> Decision{Choice, Distribution, Margin, Entropy}
    (renormalizes over exactly the options; discards every other token)
 4. publish the numbers to the policy (Go computes flags, the engine gates —
-   see policy.dl header for why threshold/2 is rule-defined, not a bare fact)
+   see policy.mg header for why threshold/2 is rule-defined, not a bare fact)
 5. T1 halts: review floor / auto threshold / no-parse escape hatch
    T2 advisory: thin margin (visible in Explain, never blocks)
 ```
@@ -110,9 +110,9 @@ actually sent (so `SpacePrefix` cannot bypass it).
 | SGLang `/v1/score` + `label_token_ids` | `scoring.ScoreServer` (1 request/case, server-side restricted softmax over the label IDs) | kernel `adapters/scoring` |
 | Restricted softmax over A/B/C | `scoring.Build` — renormalizes over exactly the options, + single-token label validation | kernel `adapters/scoring` |
 | *(blog needs a scoring server)* | `scoring.ChatScorer`: `/chat/completions` + `logprobs`/`top_logprobs`, labels read client-side — **API key only, no server** | kernel `adapters/scoring` |
-| Thresholds in Python code | `threshold(Name, Value)` in Datalog, hot-reloadable | `policy.dl` |
-| `if p < 0.70: "send to review"` | T1 `halt` rule + `client.Explain` proof tree with P/T bindings | `policy.dl`, `gate.go`, `main.go` |
-| OTHER/ESCALATE escape hatch | `no_valid_choice` + `unobserved_distribution` T1 rules — refusing to guess is a governed decision | `policy.dl`, `gate.go` |
+| Thresholds in Python code | `threshold(Name, Value)` in Datalog, hot-reloadable | `policy.mg` |
+| `if p < 0.70: "send to review"` | T1 `halt` rule + `client.Explain` proof tree with P/T bindings | `policy.mg`, `gate.go`, `main.go` |
+| OTHER/ESCALATE escape hatch | `no_valid_choice` + `unobserved_distribution` T1 rules — refusing to guess is a governed decision | `policy.mg`, `gate.go` |
 | 100-case two-lane benchmark (scoring vs generation, barrier + concurrent) | `--mode=bench`, 300 cases (3 × 100 the blog used) | `bench.go` |
 | *(missing in blog)* calibration | reliability table, ECE, temperature scaling (1 scalar, grid search) | `calibration.go` |
 | *(missing in blog)* order robustness | permutation flip-rate (options permuted **in the prompt text**) + average-over-permutations mitigation | `permute.go` |
@@ -183,8 +183,8 @@ earlier version fabricated `P=1.0` there and auto-routed all 300.
 - **Trục A (`--mode=bench`)** compares *lanes*: scoring vs generation, same
   policy, same server, behind a start barrier. This is the blog's parity
   experiment.
-- **Trục B (`--mode=threshold`)** compares *policies*: strict `policy.dl`
-  (auto ≥ 0.80) vs `policy_relaxed.dl` (auto ≥ 0.70), re-measured after
+- **Trục B (`--mode=threshold`)** compares *policies*: strict `policy.mg`
+  (auto ≥ 0.80) vs `policy_relaxed.mg` (auto ≥ 0.70), re-measured after
   `ReloadPolicy`, with the broken-file rejection at the end. This is the
   hot-reload demonstration and deliberately **not** a "lane".
 
@@ -195,9 +195,9 @@ main.go              # tour: score -> gate -> Explain -> hot swap -> fail-safe r
 scoring.go           # example glue only: Decision/Scorer aliases, MockScorer, MockTokenizer
 generate.go          # Generator for lane G; MockGenerator (simulated primacy bias); SGLangGenerator
 gate.go              # supervised route_ticket + outcome mapping (thresholds via the kernel adapter)
-policy.dl            # strict thresholds (rule-defined, see header)
-policy_relaxed.dl    # relaxed twin for the hot-swap demo
-policy_broken.dl     # intentionally invalid — used by the fail-safe test
+policy.mg            # strict thresholds (rule-defined, see header)
+policy_relaxed.mg    # relaxed twin for the hot-swap demo
+policy_broken.mg     # intentionally invalid — used by the fail-safe test
 bench.go             # Truc A: barrier-synchronized two-lane harness (one gate per lane)
 threshold_demo.go    # Truc B: ReloadPolicy + fail-safe + escalation-mix table
 calibration.go       # reliability bins, ECE, temperature scaling (1 scalar)

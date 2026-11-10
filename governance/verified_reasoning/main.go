@@ -51,7 +51,7 @@ func (m *scriptedMock) Next() (x, y int) {
 func main() {
 	ctx := context.Background()
 
-	policyData := manglekit.MustReadFile("constraints.dl")
+	policyData := manglekit.MustReadFile("constraints.mg")
 
 	client, err := sdk.NewClient(ctx)
 	if err != nil {

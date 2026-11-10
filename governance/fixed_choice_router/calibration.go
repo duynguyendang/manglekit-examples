@@ -24,7 +24,7 @@ type calObservation struct {
 //     [0.5, 3.0] to minimize mean NLL on the labeled set — deliberately the
 //     simple version: one scalar, nothing that could overfit a 300-case demo.
 //
-// Why this earns its place: policy.dl compares thresholds against these
+// Why this earns its place: policy.mg compares thresholds against these
 // probabilities, and a gate on an uncalibrated number is a gate on vibes.
 // This is the direct answer to the calibration-drift comment under the Jev
 // blog. The report names the scorer: T is a property of (model,

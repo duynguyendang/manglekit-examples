@@ -228,7 +228,7 @@ func runTour(ctx context.Context, scorer Scorer, live bool, cases []datasets.Cas
 		return err
 	}
 	fmt.Printf("\nthresholds loaded FROM the policy (threshold_pm/2, per-mille integers): auto=%.2f margin=%.2f review=%.2f\n", th.Auto, th.Margin, th.Review)
-	fmt.Println("(the policy also owns the COMPARISON — :lt/:ge over score_pm vs class_bar; edit policy.dl and rerun)")
+	fmt.Println("(the policy also owns the COMPARISON — :lt/:ge over score_pm vs class_bar; edit policy.mg and rerun)")
 
 	picks := tourPicks(cases)
 	fmt.Printf("\n=== Tour: %d fixture cases through score -> restricted softmax -> policy gate ===\n\n", len(picks))
@@ -276,7 +276,7 @@ func runTour(ctx context.Context, scorer Scorer, live bool, cases []datasets.Cas
 	blocked := firstBlocked(shots)
 	if blocked == nil {
 		fmt.Printf("=== Explainable deny: skipped — no case was held back under auto>=%.2f ===\n", th.Auto)
-		fmt.Println("    (every case cleared the bar; lower threshold(\"auto\") in policy.dl to see a proof tree)")
+		fmt.Println("    (every case cleared the bar; lower threshold(\"auto\") in policy.mg to see a proof tree)")
 		fmt.Println()
 	} else if err := explainBlocked(ctx, gate.client, th, *blocked); err != nil {
 		return err
@@ -285,7 +285,7 @@ func runTour(ctx context.Context, scorer Scorer, live bool, cases []datasets.Cas
 	// Micro hot-reload shot: re-run the same scored cases under the relaxed
 	// policy and show how the mix moves. Reported as counts, so it stays
 	// honest whatever the fixture/backend shape happens to be.
-	fmt.Println("=== Hot swap: ReloadPolicy(policy_relaxed.dl) — same cases, relaxed thresholds ===")
+	fmt.Println("=== Hot swap: ReloadPolicy(policy_relaxed.mg) — same cases, relaxed thresholds ===")
 	if err := gate.client.ReloadPolicy(ctx, relaxedPolicyPath()); err != nil {
 		return fmt.Errorf("reload relaxed policy: %w", err)
 	}
@@ -318,7 +318,7 @@ func runTour(ctx context.Context, scorer Scorer, live bool, cases []datasets.Cas
 
 	// Fail-safe: a broken policy file is rejected; the active one keeps
 	// serving unchanged.
-	fmt.Println("=== Fail-safe reload: ReloadPolicy(policy_broken.dl) must be REJECTED ===")
+	fmt.Println("=== Fail-safe reload: ReloadPolicy(policy_broken.mg) must be REJECTED ===")
 	if err := gate.client.ReloadPolicy(ctx, brokenPolicyPath()); err == nil {
 		return fmt.Errorf("broken policy was accepted — fail-safe is broken")
 	} else {
@@ -327,7 +327,7 @@ func runTour(ctx context.Context, scorer Scorer, live bool, cases []datasets.Cas
 	if err := gate.client.ReloadPolicy(ctx, policyPath()); err != nil {
 		return fmt.Errorf("restore strict policy: %w", err)
 	}
-	fmt.Println("policy.dl restored; the strict thresholds are back.")
+	fmt.Println("policy.mg restored; the strict thresholds are back.")
 	if live {
 		fmt.Println("\n(live backend was used for scoring; unset MANGLE_SCORER / MANGLE_SCORER_BACKEND for the deterministic demo)")
 	}

@@ -62,9 +62,9 @@ type ReloadRequest struct {
 	PolicyPath string `json:"policy_path"`
 }
 
-// policyPath resolves policy.dl relative to this file (cwd-safe).
+// policyPath resolves policy.mg relative to this file (cwd-safe).
 func policyPath() string {
-	const rel = "policy.dl"
+	const rel = "policy.mg"
 	if _, err := os.Stat(rel); err == nil {
 		return rel
 	}
@@ -143,7 +143,7 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 // handleReload hot-swaps the active policy from a new file. On success the
 // very next request is evaluated against the new program; on failure the
 // old policy is still active and the error is reported (never partial).
-// The swap also proves engine builtins survive reloads: the std.dl deny/halt
+// The swap also proves engine builtins survive reloads: the std.mg deny/halt
 // vocabulary and planner rules keep working after the swap.
 func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 	var req ReloadRequest

@@ -22,9 +22,9 @@ func exampleDir() string {
 
 // policyPath / relaxedPolicyPath / brokenPolicyPath point at the three
 // Datalog programs shipped with this example.
-func policyPath() string        { return filepath.Join(exampleDir(), "policy.dl") }
-func relaxedPolicyPath() string { return filepath.Join(exampleDir(), "policy_relaxed.dl") }
-func brokenPolicyPath() string  { return filepath.Join(exampleDir(), "policy_broken.dl") }
+func policyPath() string        { return filepath.Join(exampleDir(), "policy.mg") }
+func relaxedPolicyPath() string { return filepath.Join(exampleDir(), "policy_relaxed.mg") }
+func brokenPolicyPath() string  { return filepath.Join(exampleDir(), "policy_broken.mg") }
 
 // Outcomes of one gated routing call.
 const (

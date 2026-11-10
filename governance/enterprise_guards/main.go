@@ -40,7 +40,7 @@ type MessageRequest struct {
 func main() {
 	ctx := context.Background()
 
-	policyPath := filepath.Join(exampleDir(), "enterprise_guards.dl")
+	policyPath := filepath.Join(exampleDir(), "enterprise_guards.mg")
 	policyData := manglekit.MustReadFile(policyPath)
 
 	client, err := manglekit.NewClient(ctx)

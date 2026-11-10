@@ -15,7 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 FACTS="${1:-testdata_clean.pr-graph.nt}"
 
-POLICY="$(mktemp).dl"
+POLICY="$(mktemp).mg"
 go run . --emit-policy "$POLICY"
 
 # Build mkit from inside the kernel module (sibling layout; override with

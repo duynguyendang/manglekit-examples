@@ -4,7 +4,7 @@
 //
 // It showcases the shortest manglekit setup surface:
 //
-//	client := manglekit.Must(manglekit.QuickClient(ctx, "policy.dl"))
+//	client := manglekit.Must(manglekit.QuickClient(ctx, "policy.mg"))
 //	client.RegisterSupervised("answer", act)
 //	client.ExecuteByName(ctx, "answer", req, manglekit.WithMetadata("topic", t))
 //
@@ -50,11 +50,11 @@ type Answer struct {
 	Source string `json:"source"`
 }
 
-// policyPath resolves policy.dl relative to this file so the example runs
+// policyPath resolves policy.mg relative to this file so the example runs
 // from both the repo root and its own directory (QuickClient itself reads
 // cwd-relative paths, so we hand it an absolute path when needed).
 func policyPath() string {
-	const rel = "policy.dl"
+	const rel = "policy.mg"
 	if _, err := os.Stat(rel); err == nil {
 		return rel
 	}

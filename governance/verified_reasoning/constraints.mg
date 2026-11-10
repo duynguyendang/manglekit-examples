@@ -17,5 +17,8 @@ valid("y", 3).
 violation("x != 7") :- solution("x", X), !valid("x", X).
 violation("y != 3") :- solution("y", Y), !valid("y", Y).
 
+Decl has_violation(Req).
+has_violation(Req) :- action_operation(Req, "solve"), violation(_).
+
 % Certified correct when no violations exist.
-certified(Req) :- action_operation(Req, "solve"), !violation(_).
+certified(Req) :- action_operation(Req, "solve"), !has_violation(Req).

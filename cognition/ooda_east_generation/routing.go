@@ -51,7 +51,7 @@ func pathName(p ooda.ExecutionPath) string {
 }
 
 func demoRoutingSteering(ctx context.Context) error {
-	routingPolicy := manglekit.MustReadFile("routing.dl")
+	routingPolicy := manglekit.MustReadFile("routing.mg")
 
 	client, err := sdk.NewClient(ctx)
 	if err != nil {
