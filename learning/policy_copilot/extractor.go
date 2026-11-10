@@ -127,7 +127,8 @@ Decl price_exceeds(A, B).`
 		fmt.Sprintf(`quantity("Req", %d).`, order.Quantity),
 		fmt.Sprintf(`price("Req", %.2f).`, order.Price),
 	)
-	// Pre-compute numeric comparison in Go (Datalog can't cross-fact :lt/:gt).
+	// Pre-compute numeric comparison in Go. NOTE: cross-fact INTEGER :lt/:gt does
+	// work in Mangle rule bodies; floats do not (integer-only builtins).
 	priceExceeds := "false"
 	if order.Price > 50 {
 		priceExceeds = "true"

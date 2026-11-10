@@ -171,8 +171,9 @@ func runBenchmark(ctx context.Context, scorer Scorer, live bool, cases []dataset
 	if !live {
 		fmt.Println("latency/throughput hidden in mock mode — they measure the mock, not a model. Set MANGLE_SCORER_BACKEND to see them.")
 	}
-	fmt.Println("lane S = restricted-softmax scoring + policy gate (Jev's inference path, governed)")
-	fmt.Println("lane G = generate-then-parse (letter in the first 100 chars); a choice it cannot parse escalates via the no_valid_choice rule")
+	fmt.Println("lane S = restricted-softmax scoring + policy gate: the policy itself compares score_pm against class_bar (:lt/:ge), so the proof tree shows the arithmetic")
+	fmt.Println("lane G = generate-then-parse. It publishes NO score — a letter is not a distribution — so the policy sends every one to review (no_score_present_review).")
+	fmt.Println("         That 0 in the auto column is the result, not a bug: you cannot automate what you cannot measure. An earlier version fabricated P=1.0 here and auto-routed all 300.")
 
 	// A benchmark that hides its failures reports a clean run over a broken
 	// one. Surface them, and fail the command.
@@ -236,16 +237,12 @@ func generateLaneWork(gen Generator, gate *Gate) func(context.Context, datasets.
 			return "", outcome, completionTokens, err
 		}
 		choice := opts[idx]
-		dec := &Decision{
-			Choice:       choice,
-			Distribution: map[string]float64{choice: 1},
-			Margin:       1,
-		}
-		// The generation lane produces no probability, so there is nothing
-		// for a confidence threshold to bite on — every parsed answer sails
-		// through with a forced 1.0. That asymmetry is exactly what the
-		// scoring lane's calibrated gate replaces.
-		outcome, err := gate.Route(ctx, c.ID, dec, Thresholds{})
+		// The generation lane has NO distribution — the model wrote a letter
+		// and that is all the evidence. Publishing a fabricated 1.0 here (as
+		// an earlier version did) would clear every bar and produce an
+		// authoritative-looking proof about a number nobody measured, so the
+		// policy gates on the absence of a score instead.
+		outcome, err := gate.RouteChoiceOnly(ctx, c.ID, choice)
 		return choice, outcome, completionTokens, err
 	}
 }

@@ -171,25 +171,33 @@ func TestExplainDenyCarriesProof(t *testing.T) {
 	}
 	defer gate.Shutdown(ctx)
 
-	reviewCase := casesByDomain(cases, datasets.DomainSupport)[4] // P=0.740
-	expl, err := gate.client.Explain(ctx, `halt("Req", Reason, Tier)`, []string{
-		`action_operation("Req", "route_ticket").`,
-		`meta("below_auto", "true").`,
-		`confidence("0.740").`,
-	})
+	scorer := NewMockScorer(cases)
+	reviewCase := casesByDomain(cases, datasets.DomainSupport)[4] // P=0.740 technical_support
+	dec := mustScore(t, scorer, reviewCase)
+	th, err := ReadThresholds(ctx, gate.client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Explain over exactly the facts the gate saw — built by the same
+	// scoring.Request the route used, so the proof cannot drift from reality.
+	env := scoring.Request(RouteTicketInput{CaseID: reviewCase.ID, Choice: dec.Choice}, dec, th)
+	facts := append([]string{`action_operation("Req", "route_ticket").`}, env.Facts...)
+	expl, err := gate.client.Explain(ctx, `halt("Req", Reason, Tier)`, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !expl.Outcome {
-		t.Fatal("Explain must derive the halt")
+		t.Fatalf("Explain must derive the halt; facts=%v", facts)
 	}
 	tree := expl.String()
-	for _, want := range []string{"low_confidence_send_to_review", "0.740", "0.80"} {
+	// The comparison itself must be in the proof: the policy did the
+	// arithmetic, not Go.
+	for _, want := range []string{"low_confidence_send_to_review", "740 < 800", `score_pm("technical_support",740)`, `class_bar("technical_support",800)`} {
 		if !strings.Contains(tree, want) {
 			t.Fatalf("proof tree must ground %q, tree:\n%s", want, tree)
 		}
 	}
-	_ = reviewCase
 }
 
 // TestReloadFlipsDecisionAndFailsSafe is the superset story in one test:
@@ -206,12 +214,15 @@ func TestReloadFlipsDecisionAndFailsSafe(t *testing.T) {
 	}
 	defer gate.Shutdown(ctx)
 
-	// P=0.710: review band under strict, auto-route under relaxed.
-	c := casesByDomain(cases, datasets.DomainSupport)[5]
+	// technical_support at P=0.740: review band under the strict 800 bar,
+	// auto-route under the relaxed 700 bar. (Not the account_access case —
+	// that class carries its own 950 bar, which the relaxed file deliberately
+	// does NOT move, so it stays in review either way.)
+	c := casesByDomain(cases, datasets.DomainSupport)[4]
 	dec := mustScore(t, scorer, c)
 	top := dec.Distribution[dec.Choice]
-	if top >= 0.70 && top >= 0.80 {
-		t.Fatalf("fixture assumption broken: P=%.3f", top)
+	if top < 0.70 || top >= 0.80 {
+		t.Fatalf("fixture assumption broken: want 0.70 <= P < 0.80, got %.3f", top)
 	}
 
 	th, err := ReadThresholds(ctx, gate.client)
@@ -262,7 +273,7 @@ func TestTourRuns(t *testing.T) {
 		"-> send_to_review",
 		"-> escalate_human",
 		"low_confidence_send_to_review",
-		"threshold(\"auto\",\"0.80\")",
+		"< 800", // the policy's own comparison, grounded in the proof
 		"policy.dl restored",
 	} {
 		if !strings.Contains(tourOutput, want) {

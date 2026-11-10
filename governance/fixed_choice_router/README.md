@@ -126,6 +126,58 @@ and the kernel's `scoring.ChatScorer` (hosted chat logprobs, key-only) and
 portable further (vLLM `prompt_logprobs`, LightLLM expose the same quantity),
 but those adapters are **not implemented** — only what is listed here exists.
 
+## The policy does the arithmetic
+
+Since the per-class redesign the gate is not "Go computes a boolean, Datalog
+pattern-matches it". The kernel publishes per-mille integers and **the policy
+compares them**:
+
+```prolog
+class_bar("billing", T)            :- threshold_pm("auto", T).   % inherits the global bar
+class_bar("account_access", 950)   :- policy_anchor("ok").       % riskier class, its own bar
+
+halt("Req", "low_confidence_send_to_review", "T1") :-
+    action_operation("Req", "route_ticket"),
+    choice(C), score_pm(C, P), class_bar(C, B), :lt(P, B),
+    threshold_pm("review", T), :ge(P, T).
+
+% mandatory catch-all: an option with no bar must DENY, not auto-route
+halt("Req", "no_class_bar_defined_refuse", "T1") :-
+    action_operation("Req", "route_ticket"),
+    choice(C), !has_class_bar(C).
+```
+
+So the same score can be allowed for one class and held back for another, and
+the proof tree contains the comparison itself:
+
+```text
+halt("Req","low_confidence_send_to_review","T1")
+  choice("technical_support")            [base fact]
+  score_pm("technical_support",740)      [base fact]
+  class_bar("technical_support",800)     via threshold_pm("auto",800) :- policy_anchor("ok")
+  740 < 800                              [builtin]
+  740 >= 700                             [builtin]
+```
+
+Integers because Mangle's comparisons are integer-only (a float operand fails
+evaluation loudly); `scoring.ToPerMille` truncates, so a borderline score fails
+the bar rather than sneaking over it.
+
+**Two lessons this policy paid for:**
+
+1. *Per-class bars must be total.* When bars existed only for the support
+   domain, every screening/expense case **auto-routed at any confidence** — the
+   halt rule could not join `class_bar/2`, so it never fired. Absence of a
+   policy fact must never mean "allowed"; hence the catch-all above.
+2. *Negate a unary derived predicate.* `!class_bar(C, B)` with `B` unbound is a
+   mode error at evaluation time (269/300 calls errored). `has_class_bar(O) :-
+   class_bar(O, B).` then `!has_class_bar(C)` works.
+
+And the generation lane now publishes **no score at all** (`RequestNoScore`):
+a letter is not a distribution. It therefore auto-routes 0/300 and lands in
+review via `no_score_present_review` — which is the result, not a bug. An
+earlier version fabricated `P=1.0` there and auto-routed all 300.
+
 ## Two axes, kept apart
 
 - **Trục A (`--mode=bench`)** compares *lanes*: scoring vs generation, same

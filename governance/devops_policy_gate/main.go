@@ -22,11 +22,18 @@
 // client.Explain prints the derivation tree, and structured deny errors
 // carry Tier / MatchedRule / ActionName.
 //
-// The Mangle analyzer rejects cross-fact :lt/:lte built-ins, so the numeric
-// comparisons themselves are performed in Go (see attachPrecomputedChecks).
-// The caller pre-computes the boolean outcome (business_hours, scale_too_high,
-// scale_too_low) and the policy just pattern-matches. This is the honest
-// boundary: the Datalog layer is a gate, not a calculator.
+// CORRECTION (2026-09-23): the claim this file used to make — that Mangle's
+// analyzer rejects cross-fact :lt/:gt — is WRONG. Integer comparisons across
+// separate fact predicates work fine in rule bodies (proven by
+// internal/engine/manglekit_deps_test.go and adapters/scoring/policycompare_test.go);
+// what Mangle rejects is FLOAT operands ("value 0.9 is not a number"), because
+// :lt/:le/:gt/:ge are integer-only.
+//
+// This example still pre-computes its booleans in Go, and that remains a
+// legitimate choice for replica counts and business hours — but it is a style
+// choice, not an engine limitation. For a numeric gate that keeps the
+// arithmetic IN the policy, see governance/fixed_choice_router (per-mille
+// integers compared with :lt/:ge, so the proof tree shows "740 < 800").
 
 package main
 

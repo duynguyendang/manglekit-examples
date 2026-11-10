@@ -36,12 +36,17 @@ const (
 // Thresholds come from the kernel adapter; the alias keeps the tour code short.
 type Thresholds = scoring.Thresholds
 
-// ReadThresholds reads the bars from the ACTIVE policy via the kernel adapter
-// (threshold/2 rules). After a ReloadPolicy these are the new numbers, and an
-// ambiguous or missing bar is a hard error rather than a permissive default —
-// see ADR-005.
+// ReadThresholds reads the bars from the ACTIVE policy via the kernel adapter.
+// The policy holds per-mille integers (Mangle's comparisons are integer-only);
+// this returns floats for reporting. After a ReloadPolicy these are the new
+// numbers, and a missing/inverted/ambiguous bar is a hard error rather than a
+// permissive default — see ADR-005.
+//
+// Note the bars are now only used for REPORTING and for the deprecated
+// Go-side flags: the gate decision itself is made by the policy's own :lt/:ge
+// comparisons over score_pm/2 and class_bar/2.
 func ReadThresholds(ctx context.Context, client *manglekit.Client) (Thresholds, error) {
-	return scoring.ThresholdsFromPolicy(ctx, client.Engine(), "threshold")
+	return scoring.ThresholdsFromPolicyScaled(ctx, client.Engine(), "threshold_pm", scoring.PerMille)
 }
 
 // Gate carries the client and the supervised action counter so callers can
@@ -135,6 +140,42 @@ func (g *Gate) RouteUnobserved(ctx context.Context, caseID string) (string, erro
 		return "", fmt.Errorf("unobserved-distribution route: %w", err)
 	}
 	return OutcomeEscalate, nil
+}
+
+// RouteChoiceOnly is the generation lane's honest path: the model wrote a
+// letter and that is ALL the evidence. It publishes the choice and no number —
+// the earlier version of this example fabricated a 1.0 distribution here, which
+// cleared every bar and produced an authoritative-looking proof about a value
+// nobody measured. The policy gates on the ABSENCE of a score instead
+// (no_score_present_review).
+func (g *Gate) RouteChoiceOnly(ctx context.Context, caseID, choice string) (string, error) {
+	before := atomic.LoadInt32(&g.executed)
+	env := scoring.RequestNoScore(RouteTicketInput{CaseID: caseID, Choice: choice}, choice)
+	_, err := g.client.ExecuteByName(ctx, "route_ticket", env)
+	ran := atomic.LoadInt32(&g.executed) > before
+	if err == nil {
+		if !ran {
+			return "", errors.New("gate: policy allowed but the action did not run")
+		}
+		return OutcomeAuto, nil
+	}
+	var pve *core.PolicyViolationError
+	if !core.IsPolicyViolationError(err) || !errors.As(err, &pve) {
+		return "", fmt.Errorf("route_ticket: %w", err)
+	}
+	if ran {
+		return "", errors.New("gate: T1 halt fired but the action still ran")
+	}
+	switch {
+	case containsRule(pve, "no_score_present"):
+		return OutcomeReview, nil
+	case containsRule(pve, "escalate"):
+		return OutcomeEscalate, nil
+	case containsRule(pve, "review"):
+		return OutcomeReview, nil
+	default:
+		return "", fmt.Errorf("unexpected deny: %v", err)
+	}
 }
 
 // RouteNoChoice models the generation lane's OTHER/ESCALATE escape hatch:

@@ -54,7 +54,12 @@ func (m *MockScorer) Score(_ context.Context, prompt string, labels, options []s
 	}
 	// Build is the kernel's restricted softmax: normalizes over exactly these
 	// options, rejects duplicates, derives margin + entropy.
-	return scoring.Build(labels, options, probs)
+	d, err := scoring.Build(labels, options, probs)
+	if err != nil {
+		return nil, err
+	}
+	d.Source = "mock_fixture"
+	return d, nil
 }
 
 // LookupCase finds the fixture case whose "ref <id>" marker appears in a

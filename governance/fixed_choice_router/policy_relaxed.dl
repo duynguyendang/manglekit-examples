@@ -1,42 +1,80 @@
-% Relaxed twin of policy.dl — ONLY the threshold definitions move:
-%   auto: 0.80 -> 0.70, review floor: 0.70 -> 0.60.
-% Used by the threshold-effect demo (Trục B): reload this file mid-run
-% with client.ReloadPolicy and watch the escalate/review mix change
-% without a rebuild. Rules are otherwise identical to policy.dl.
+% Relaxed twin of policy.dl — ONLY the bars move (auto 800 -> 700 per-mille,
+% review 700 -> 600). Used by the threshold-effect demo (Trục B): reload this
+% file mid-run with client.ReloadPolicy and watch the mix change without a
+% rebuild. Because the comparisons live in the rules, a reload can also change
+% the decision LOGIC — this file happens to change only the numbers.
 
 Decl policy_anchor(Marker).
 policy_anchor("ok").
 
-Decl threshold(Name, Value).
-threshold("auto", "0.70") :- policy_anchor("ok").
-threshold("margin", "0.20") :- policy_anchor("ok").
-threshold("review", "0.60") :- policy_anchor("ok").
+Decl threshold_pm(Name, Value).
+threshold_pm("auto", 700) :- policy_anchor("ok").
+threshold_pm("margin", 200) :- policy_anchor("ok").
+threshold_pm("review", 600) :- policy_anchor("ok").
 
+Decl class_bar(Option, Bar).
+class_bar("billing", T) :- threshold_pm("auto", T).
+class_bar("technical_support", T) :- threshold_pm("auto", T).
+class_bar("account_access", 950) :- policy_anchor("ok").
+class_bar("advance", T) :- threshold_pm("auto", T).
+class_bar("interview", T) :- threshold_pm("auto", T).
+class_bar("reject", T) :- threshold_pm("auto", T).
+class_bar("approve", T) :- threshold_pm("auto", T).
+class_bar("flag_audit", 950) :- policy_anchor("ok").
+class_bar("reject_expense", T) :- threshold_pm("auto", T).
+
+% Every option the router can emit must have a bar. has_class_bar/1 exists so
+% the catch-all below can negate a UNARY, fully-bound atom — negating
+% class_bar(C, B) with B unbound is a mode error at evaluation time.
+Decl has_class_bar(Option).
+has_class_bar(O) :- class_bar(O, B).
+
+Decl choice(Option).
+Decl score_pm(Option, Score).
+Decl score_lcb_pm(Option, Score).
+Decl margin_value_pm(Score).
 Decl confidence(Value).
 Decl margin_value(Value).
 Decl entropy_value(Value).
-
-halt("Req", "confidence_below_review_floor_escalate", "T1") :-
-    action_operation("Req", "route_ticket"),
-    meta("below_review", "true").
-
-halt("Req", "low_confidence_send_to_review", "T1") :-
-    action_operation("Req", "route_ticket"),
-    meta("below_auto", "true"),
-    !meta("below_review", "true"),
-    confidence(P),
-    threshold("auto", T).
-
-halt("Req", "no_valid_choice_escalate", "T1") :-
-    action_operation("Req", "route_ticket"),
-    meta("no_valid_choice", "true").
+Decl score_source(Source).
+Decl truncated_top_k(Flag).
 
 halt("Req", "unobserved_distribution_escalate", "T1") :-
     action_operation("Req", "route_ticket"),
     meta("unobserved_distribution", "true").
 
+halt("Req", "no_score_present_review", "T1") :-
+    action_operation("Req", "route_ticket"),
+    meta("no_score_present", "true").
+
+halt("Req", "no_valid_choice_escalate", "T1") :-
+    action_operation("Req", "route_ticket"),
+    meta("no_valid_choice", "true").
+
+% --- T1: an option with NO bar defined -> refuse -------------------------
+% Fail-CLOSED by construction, and this rule exists because of a bug this
+% policy actually shipped: when bars were defined only for the support domain,
+% every screening/expense case auto-routed at ANY confidence, because the
+% review rule could not join class_bar/2 and so never fired. Absence of a
+% policy fact must never mean "allowed".
+halt("Req", "no_class_bar_defined_refuse", "T1") :-
+    action_operation("Req", "route_ticket"),
+    choice(C), !has_class_bar(C).
+
+halt("Req", "confidence_below_review_floor_escalate", "T1") :-
+    action_operation("Req", "route_ticket"),
+    choice(C), score_pm(C, P), threshold_pm("review", T), :lt(P, T).
+
+halt("Req", "low_confidence_send_to_review", "T1") :-
+    action_operation("Req", "route_ticket"),
+    choice(C), score_pm(C, P), class_bar(C, B), :lt(P, B),
+    threshold_pm("review", T), :ge(P, T).
+
+halt("Req", "truncated top_logprobs — scores are lower bounds", "T2") :-
+    action_operation("Req", "route_ticket"),
+    truncated_top_k("true").
+
 halt("Req", "thin margin over runner-up — consider spot-checking", "T2") :-
     action_operation("Req", "route_ticket"),
-    meta("thin_margin", "true"),
-    margin_value(M),
-    threshold("margin", T).
+    choice(C), score_pm(C, P), class_bar(C, B), :ge(P, B),
+    margin_value_pm(M), threshold_pm("margin", T), :lt(M, T).

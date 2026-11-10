@@ -227,8 +227,8 @@ func runTour(ctx context.Context, scorer Scorer, live bool, cases []datasets.Cas
 	if err != nil {
 		return err
 	}
-	fmt.Printf("\nthresholds loaded FROM the policy (threshold/2 rules): auto=%.2f margin=%.2f review=%.2f\n", th.Auto, th.Margin, th.Review)
-	fmt.Println("(edit policy.dl and rerun — the numbers, not the code, changed)")
+	fmt.Printf("\nthresholds loaded FROM the policy (threshold_pm/2, per-mille integers): auto=%.2f margin=%.2f review=%.2f\n", th.Auto, th.Margin, th.Review)
+	fmt.Println("(the policy also owns the COMPARISON — :lt/:ge over score_pm vs class_bar; edit policy.dl and rerun)")
 
 	picks := tourPicks(cases)
 	fmt.Printf("\n=== Tour: %d fixture cases through score -> restricted softmax -> policy gate ===\n\n", len(picks))
@@ -367,20 +367,18 @@ func countOutcomes(shots []tourShot) map[string]int {
 	return m
 }
 
-// explainBlocked renders the derivation tree for one case the gate held back,
-// feeding Explain exactly the facts the pre-check saw.
+// explainBlocked renders the derivation tree for one case the gate held back.
+// The facts fed to Explain are built from the SAME scoring.Request the gate
+// saw, so the proof is over the real input — not a hand-written approximation
+// that can drift away from what the policy actually evaluated.
 func explainBlocked(ctx context.Context, client *manglekit.Client, th Thresholds, s tourShot) error {
-	top := s.dec.Distribution[s.dec.Choice]
-	facts := []string{
-		`action_operation("Req", "route_ticket").`,
-		fmt.Sprintf("confidence(%q).", fmt.Sprintf("%.3f", top)),
+	env := scoring.Request(RouteTicketInput{CaseID: s.c.ID, Choice: s.dec.Choice}, s.dec, th)
+	facts := append([]string{`action_operation("Req", "route_ticket").`}, env.Facts...)
+	for k, v := range env.Metadata {
+		facts = append(facts, fmt.Sprintf("meta(%q, %q).", k, fmt.Sprint(v)))
 	}
-	switch s.outcome {
-	case OutcomeReview:
-		facts = append(facts, `meta("below_auto", "true").`)
-	case OutcomeEscalate:
-		facts = append(facts, `meta("below_review", "true").`)
-	}
+	sort.Strings(facts) // deterministic proof order for golden assertions
+
 	expl, err := client.Explain(ctx, `halt("Req", Reason, Tier)`, facts)
 	if err != nil {
 		return fmt.Errorf("explain: %w", err)
@@ -388,8 +386,8 @@ func explainBlocked(ctx context.Context, client *manglekit.Client, th Thresholds
 	fmt.Printf("=== Why %s became %s (client.Explain proof tree) ===\n", s.c.ID, s.outcome)
 	fmt.Printf("derived: %v\n", expl.Outcome)
 	fmt.Println(expl.String())
-	fmt.Printf("    the rule bound P=%s against the policy's own bar (auto=%.2f, review=%.2f)\n\n",
-		fmt.Sprintf("%.3f", top), th.Auto, th.Review)
+	fmt.Printf("    the policy itself compared the score against the class bar (auto=%.2f, review=%.2f)\n\n",
+		th.Auto, th.Review)
 	return nil
 }
 

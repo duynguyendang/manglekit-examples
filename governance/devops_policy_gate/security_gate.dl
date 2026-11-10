@@ -32,14 +32,12 @@ halt("Req", "Terraform destroy requires approval") :-
 
 % --- Business-Hours Window ---
 %
-% Mangle's :lt/:lte built-ins require both arguments to be input-mode bound
-% through a single fact predicate; the analyzer cannot prove that across
-% separate fact predicates. So the caller (Go) collapses the comparison into
-% a boolean meta flag `business_hours` ("true"/absent) and the policy just
-% pattern-matches it. Numeric range comparison is NOT actually performed by
-% the policy — the SDK does it in Go (attachPrecomputedChecks) and publishes
-% the boolean result as meta/2. This is honest about the SDK's capability
-% boundary: the Datalog layer is the gate, not the calculator.
+% CORRECTION (2026-09-23): cross-fact integer comparisons DO work in rule
+% bodies (:lt/:le/:gt/:ge with both args bound by preceding atoms). What fails
+% is FLOAT operands — Mangle's comparisons are integer-only. This policy still
+% takes Go-computed booleans, which is a style choice, not an engine limit;
+% see governance/fixed_choice_router for a gate that compares per-mille
+% integers inside the policy.
 %
 % The flag is forwarded to the policy engine via ExecuteByName metadata, so
 % it arrives as meta("business_hours", "true") — not as a raw fact.
