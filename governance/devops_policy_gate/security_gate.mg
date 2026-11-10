@@ -32,29 +32,43 @@ halt("Req", "Terraform destroy requires approval") :-
 
 % --- Business-Hours Window ---
 %
-% CORRECTION (2026-09-23): cross-fact integer comparisons DO work in rule
-% bodies (:lt/:le/:gt/:ge with both args bound by preceding atoms). What fails
-% is FLOAT operands — Mangle's comparisons are integer-only. This policy still
-% takes Go-computed booleans, which is a style choice, not an engine limit;
-% see governance/fixed_choice_router for a gate that compares per-mille
-% integers inside the policy.
-%
-% The flag is forwarded to the policy engine via ExecuteByName metadata, so
-% it arrives as meta("business_hours", "true") — not as a raw fact.
+% Cross-fact integer comparisons (:ge, :lt) evaluate business hours natively:
+% Business hours are 09:00 to 18:00 (exclusive).
+% Supports either direct integer facts: current_hour(H) / hour(H)
+% or backward-compatible metadata: meta("business_hours", "true").
+
+Decl current_hour(H).
+Decl target_replicas(N).
+
+halt("Req", "Cannot destroy infrastructure during business hours") :-
+    action_operation("Req", "terraform_destroy"),
+    current_hour(H),
+    :ge(H, 9),
+    :lt(H, 18).
 
 halt("Req", "Cannot destroy infrastructure during business hours") :-
     action_operation("Req", "terraform_destroy"),
     meta("business_hours", "true").
 
 % --- Replica Limit ---
-% Same pattern: the SDK computes "N > 10 || N < 1" in Go and emits either
-% scale_too_high or scale_too_low as a boolean meta flag ("true"/absent).
-% The policy pattern-matches the pre-computed result, which arrives as
-% meta("scale_too_high", "true") / meta("scale_too_low", "true").
+%
+% Native Mangle integer comparison: max 10 replicas, min 1 replica.
+% Matches either direct target_replicas(N) facts or backward-compatible
+% precomputed meta flags.
+
+halt("Req", "Scale exceeds maximum replicas") :-
+    action_operation("Req", "kubectl_scale"),
+    target_replicas(N),
+    :gt(N, 10).
 
 halt("Req", "Scale exceeds maximum replicas") :-
     action_operation("Req", "kubectl_scale"),
     meta("scale_too_high", "true").
+
+halt("Req", "Cannot scale to zero replicas") :-
+    action_operation("Req", "kubectl_scale"),
+    target_replicas(N),
+    :lt(N, 1).
 
 halt("Req", "Cannot scale to zero replicas") :-
     action_operation("Req", "kubectl_scale"),

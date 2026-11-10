@@ -76,7 +76,7 @@ func TestScaleTooHigh(t *testing.T) {
 	ctx := context.Background()
 	env := core.NewEnvelope(map[string]string{})
 	addNum(t, &env, "target_replicas", 20)
-	attachPrecomputedChecks(&env, "20", "")
+	// Native numeric comparison in Datalog (without attachPrecomputedChecks)
 	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_scale"}, env)
 	if !core.IsAlignmentError(err) {
 		t.Error("expected scale_too_high (20 > 10) to be blocked")
@@ -88,7 +88,6 @@ func TestScaleAtLimit(t *testing.T) {
 	ctx := context.Background()
 	env := core.NewEnvelope(map[string]string{})
 	addNum(t, &env, "target_replicas", 11)
-	attachPrecomputedChecks(&env, "11", "")
 	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_scale"}, env)
 	if !core.IsAlignmentError(err) {
 		t.Error("expected 11 > 10 to be blocked")
@@ -100,7 +99,6 @@ func TestScaleWithinLimit(t *testing.T) {
 	ctx := context.Background()
 	env := core.NewEnvelope(map[string]string{})
 	addNum(t, &env, "target_replicas", 5)
-	attachPrecomputedChecks(&env, "5", "")
 	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_scale"}, env)
 	if core.IsAlignmentError(err) {
 		t.Errorf("expected scale within limit to be allowed, got: %v", err)
@@ -112,7 +110,6 @@ func TestScaleZeroBlocked(t *testing.T) {
 	ctx := context.Background()
 	env := core.NewEnvelope(map[string]string{})
 	addNum(t, &env, "target_replicas", 0)
-	attachPrecomputedChecks(&env, "0", "")
 	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "kubectl_scale"}, env)
 	if !core.IsAlignmentError(err) {
 		t.Error("expected 0 replicas to be blocked")
@@ -171,7 +168,6 @@ func TestDestroyDuringBusinessHours(t *testing.T) {
 	ctx := context.Background()
 	env := core.NewEnvelope(map[string]string{})
 	addNum(t, &env, "current_hour", 14)
-	attachPrecomputedChecks(&env, "", "14")
 	env.Metadata["has_approval"] = "true"
 	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_destroy"}, env)
 	if !core.IsAlignmentError(err) {
@@ -185,7 +181,6 @@ func TestDestroyAtBoundary(t *testing.T) {
 	ctx := context.Background()
 	env := core.NewEnvelope(map[string]string{})
 	addNum(t, &env, "current_hour", 17)
-	attachPrecomputedChecks(&env, "", "17")
 	env.Metadata["has_approval"] = "true"
 	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_destroy"}, env)
 	if !core.IsAlignmentError(err) {
@@ -198,7 +193,6 @@ func TestDestroyAfterHours(t *testing.T) {
 	ctx := context.Background()
 	env := core.NewEnvelope(map[string]string{})
 	addNum(t, &env, "current_hour", 22)
-	attachPrecomputedChecks(&env, "", "22")
 	env.Metadata["has_approval"] = "true"
 	err := client.Engine().Assess(ctx, core.ActionMetadata{Name: "terraform_destroy"}, env)
 	if core.IsAlignmentError(err) {
