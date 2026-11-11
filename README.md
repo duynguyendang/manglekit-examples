@@ -44,9 +44,12 @@ first.
 
 | Question | Package | Proof you can run |
 |---|---|---|
+| Real-world zero-trust guardrails (refunds, prod infra, OTP)? | `governance/enterprise_guards` | dual-approval thresholds, breakglass tokens |
 | Can prompt injection exfiltrate data? | `governance/jailbreak_proof_agent` | tainted exfil blocked at pre-check |
 | Dangerous infra ops blocked — and *why*? | `governance/devops_policy_gate` | T1 denies, T2 advises, Explain tree |
-| Audit trail for regulators (GDPR)? | `governance/compliance_proof` | tiered halt proofs |
+| Audit trail for regulators (GDPR) with JSON proof export? | `governance/compliance_proof` | tiered halt proofs + deterministic ProofBundle JSON via AuditSink |
+| Adversarial bypass and security traps held? | `governance/trap_suite` | 5 adversarial trap scenarios fail-closed |
+| How does MangleKit compare to OPA Rego? | `governance/benchmarks` | 100% decision equivalence, ~0.02ms latency |
 | Cheap model, still certified correct? | `governance/verified_reasoning` | wrong→wrong→right retry loop |
 | Routing decision with provable thresholds (Jev parity)? | `governance/fixed_choice_router` | distribution → T1 halt + Explain P/T bindings; live/mock dual mode |
 | Reuse an existing policy DSL, zero engine changes? | `governance/custom_policy_format` | compile → LoadPolicy |
@@ -94,11 +97,14 @@ Zero-trust policy enforcement — the core value prop of manglekit.
 
 | Example | Description | API Key | Run |
 |---|---|---|---|
-| **devops_policy_gate** | CI/CD security gates (Terraform/K8s) + tier semantics (T1 blocks vs T2 advisory, P0.7) + Explainable Deny: structured `PolicyViolationError` and the derivation proof tree | No | `go run ./governance/devops_policy_gate/` |
-| **compliance_proof** | GDPR as tiered Datalog — `AssessPlan` renders `AuditTrail` as machine-checkable proof | No | `go run ./governance/compliance_proof/` |
+| **enterprise_guards** ★ | Production-ready zero-trust enterprise guardrails (Financial Refund Dual-Approval, Destructive Infrastructure Delete, OTP Exfiltration Guard) + `mkit test` YAML fixture | No | `go run ./governance/enterprise_guards/` |
+| **devops_policy_gate** | CI/CD security gates (Terraform/K8s) + tier semantics (T1 blocks vs T2 advisory) + native numeric comparisons (`:ge`, `:lt`, `:gt`) + Explainable Deny (`client.Explain`) + `mkit test` | No | `go run ./governance/devops_policy_gate/` |
+| **compliance_proof** | GDPR as tiered Datalog — machine-checkable proof + `sdk.WithAuditSink` + deterministic `core.ProofBundle` JSON export for regulators | No | `go run ./governance/compliance_proof/` |
+| **trap_suite** ★ | Automated security trap suite validating fail-closed invariants against direct bypass, type confusion, token replay, idempotency breach, and policy hash drift | No | `go test -v ./governance/trap_suite/` |
+| **benchmarks** ★ | OPA Rego vs MangleKit comparative benchmarks (100% decision equivalence, ~0.02ms latency) + rule scale benchmarks (1 to 100 rules) | No | `go test -v -bench=. ./governance/benchmarks/` |
 | **jailbreak_proof_agent** | T0 taint axiom blocks data exfiltration — mock LLM complies with injection but kernel holds | No | `go run ./governance/jailbreak_proof_agent/` |
 | **verified_reasoning** | Cheap model + symbolic verifier = certified-correct output via verify-retry loop | No | `go run ./governance/verified_reasoning/` |
-| **fixed_choice_router** ★ | Jev-parity fixed-choice routing: single-pass A/B/C scoring (restricted softmax) with thresholds as hot-reloadable Datalog, Explain proofs, two-lane benchmark, calibration + permutation tests. Three backends: deterministic mock (default), key-only hosted chat logprobs (`MANGLE_SCORER=openai`), or a `/v1/score` server (`MANGLE_SCORER_BACKEND`) | No (mock; API key or optional server for live) | `go run ./governance/fixed_choice_router/` |
+| **fixed_choice_router** | Jev-parity fixed-choice routing: single-pass A/B/C scoring (restricted softmax) with thresholds as hot-reloadable Datalog, Explain proofs, two-lane benchmark, calibration + permutation tests. Three backends: deterministic mock (default), key-only hosted chat logprobs (`MANGLE_SCORER=openai`), or a `/v1/score` server (`MANGLE_SCORER_BACKEND`) | No (mock; API key or optional server for live) | `go run ./governance/fixed_choice_router/` |
 | **temporal_compliance** | **Was authorization valid at transaction time?** Retro-audit with temporal facts (UC-G5; engine feature is opt-in via `EnableTemporal`) | No | `go run ./knowledge/temporal_compliance/` |
 
 ### 3. Knowledge & Reasoning
@@ -169,11 +175,18 @@ What this suite demonstrates — and where you can watch it fail closed:
 | Feature | Package | Examples |
 |---|---|---|
 | Datalog policy engine | `core.Evaluator` | All examples |
-| Zero-trust supervisor | `client.Supervise()` → `client.ExecuteByName()` | code_to_policy_extractor, devops_policy_gate, mcp_tool_integration, hybrid_rag, goal_based_planning, persistent_store, config_driven_app |
+| Zero-trust supervisor | `client.Supervise()` → `client.ExecuteByName()` | code_to_policy_extractor, devops_policy_gate, enterprise_guards, mcp_tool_integration, hybrid_rag, goal_based_planning, persistent_store, config_driven_app |
 | Assess (policy evaluation) | `Engine().Assess()` | custom_policy_format, ooda_east_generation, config_driven_app, knowledge_graph_reasoning |
 | AssessPlan (pure policy-decision) | `Engine().AssessPlan()` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_east_generation, jailbreak_proof_agent |
 | AuditTrail rendering | `core.AuditTrail` | compliance_proof, knowledge_graph_reasoning, verified_reasoning, ooda_east_generation |
-| Tiered governance (T0–T3, real block/advisory split) | `core.Tier`, supervisor gate | compliance_proof, devops_policy_gate, ooda_east_generation |
+| Compliance ProofBundle | `core.ProofBundle` (`bundle.ToJSON()` deterministic export) | compliance_proof |
+| Pluggable AuditSink | `sdk.WithAuditSink(sink)` (non-mutating structured records) | compliance_proof |
+| Declarative policy testing | `mkit test` (YAML/JSON test fixtures) | enterprise_guards, devops_policy_gate |
+| Native numeric Datalog builtins | `:gt`, `:lt`, `:ge`, `:le` integer comparisons | devops_policy_gate, fixed_choice_router |
+| Adversarial security trap suite | automated bypass/replay/idempotency tests | trap_suite |
+| Comparative benchmarks | MangleKit vs OPA Rego + rule scaling | benchmarks |
+| Enterprise guardrails | Dual-approval, breakglass tokens, OTP protection | enterprise_guards |
+| Tiered governance (T0–T3, real block/advisory split) | `core.Tier`, supervisor gate | compliance_proof, devops_policy_gate, enterprise_guards, ooda_east_generation |
 | Explainable deny | `client.Explain`, structured `PolicyViolationError` | devops_policy_gate, fixed_choice_router |
 | Hot policy reload | `client.ReloadPolicy` (fail-safe atomic swap) | http_service, fixed_choice_router |
 | Supervised streaming | `adapters/ai.NewStreamingSupervisedAction` | genkit_middleware_showcase |
@@ -270,8 +283,11 @@ All examples include tests. No external API keys required for tests — mocks ar
 
 ```manglekit-examples/
   governance/            -- policy gate mechanics
-    devops_policy_gate/  -- CI/CD gates + T1/T2 tier split + Explain proofs
-    compliance_proof/    -- GDPR tiered Datalog with audit proof
+    enterprise_guards/   -- production zero-trust guardrails (financial/infra/OTP) + mkit test
+    devops_policy_gate/  -- CI/CD gates + T1/T2 tier split + native numeric builtins + mkit test
+    compliance_proof/    -- GDPR tiered Datalog + AuditSink + ProofBundle JSON export
+    trap_suite/          -- adversarial security trap suite (bypass, replay, idempotency)
+    benchmarks/          -- MangleKit vs OPA Rego comparative benchmarks & rule scaling
     fixed_choice_router/ -- Jev-parity fixed-choice routing: scoring gate + Explain + two-lane bench
     jailbreak_proof_agent/ -- T0 taint axiom blocks exfiltration
     verified_reasoning/  -- symbolic verify-retry certification loop

@@ -16,14 +16,14 @@ Decl purpose(Purpose).
 Decl consent(User).
 Decl has_lawful_basis(Basis).
 
-halt(Req, "Art.9: special-category data requires explicit consent") :-
+halt(Req, "Art.9: special-category data requires explicit consent", "T0") :-
     action_operation(Req, "process_data"),
     label("special"),
     !consent("explicit").
 
 % --- T1: Art.6 lawful basis (must have at least one) ---
 
-halt(Req, "Art.6: no lawful basis for processing") :-
+halt(Req, "Art.6: no lawful basis for processing", "T1") :-
     action_operation(Req, "process_data"),
     label("personal"),
     !has_lawful_basis("consent"),

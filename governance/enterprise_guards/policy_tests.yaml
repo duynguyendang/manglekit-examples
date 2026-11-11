@@ -1,0 +1,43 @@
+policy: "enterprise_guards.mg"
+tests:
+  - name: "disallow refund over $1,000 without manager approval"
+    action: "process_refund"
+    facts:
+      - 'amount_cents("Req", 150000).'
+      - 'destination_account("Req", "acc_verified_123").'
+    expect: "halt"
+    expected_tier: "T1"
+
+  - name: "allow refund within limit to verified account"
+    action: "process_refund"
+    facts:
+      - 'amount_cents("Req", 5000).'
+      - 'destination_account("Req", "acc_verified_123").'
+    expect: "allow"
+
+  - name: "disallow production resource deletion without breakglass"
+    action: "delete_resource"
+    facts:
+      - 'target_resource("Req", "db-prod-primary").'
+      - 'resource_env("Req", "production").'
+      - 'requester("Req", "alice").'
+      - 'is_owner("alice", "db-prod-primary").'
+    expect: "halt"
+    expected_tier: "T1"
+
+  - name: "allow staging resource deletion with ownership"
+    action: "delete_resource"
+    facts:
+      - 'target_resource("Req", "db-staging-test").'
+      - 'resource_env("Req", "staging").'
+      - 'requester("Req", "alice").'
+      - 'is_owner("alice", "db-staging-test").'
+    expect: "allow"
+
+  - name: "disallow outbound message containing PII to external"
+    action: "send_message"
+    facts:
+      - 'message_type("Req", "external_sms").'
+      - 'contains_pii("Req", "true").'
+    expect: "halt"
+    expected_tier: "T1"

@@ -22,18 +22,10 @@
 // client.Explain prints the derivation tree, and structured deny errors
 // carry Tier / MatchedRule / ActionName.
 //
-// CORRECTION (2026-09-23): the claim this file used to make — that Mangle's
-// analyzer rejects cross-fact :lt/:gt — is WRONG. Integer comparisons across
-// separate fact predicates work fine in rule bodies (proven by
-// internal/engine/manglekit_deps_test.go and adapters/scoring/policycompare_test.go);
-// what Mangle rejects is FLOAT operands ("value 0.9 is not a number"), because
-// :lt/:le/:gt/:ge are integer-only.
-//
-// This example still pre-computes its booleans in Go, and that remains a
-// legitimate choice for replica counts and business hours — but it is a style
-// choice, not an engine limitation. For a numeric gate that keeps the
-// arithmetic IN the policy, see governance/fixed_choice_router (per-mille
-// integers compared with :lt/:ge, so the proof tree shows "740 < 800").
+// Numeric gates in security_gate.mg use native Mangle integer comparisons
+// (:ge, :lt, :gt) over explicit facts (target_replicas(N), current_hour(H)),
+// with backward-compatible fallback to metadata boolean flags.
+// Declarative policy fixtures can also be tested directly via `mkit test policy_tests.yaml`.
 
 package main
 
@@ -110,6 +102,7 @@ func attachPrecomputedChecks(env *core.Envelope, rawReplicas, rawHour string) {
 	}
 	if rawReplicas != "" {
 		if n, err := strconv.Atoi(rawReplicas); err == nil {
+			injectNumericFact(env, "target_replicas", n)
 			if n > maxReplicas {
 				env.Metadata["scale_too_high"] = "true"
 			}
@@ -120,6 +113,7 @@ func attachPrecomputedChecks(env *core.Envelope, rawReplicas, rawHour string) {
 	}
 	if rawHour != "" {
 		if h, err := strconv.Atoi(rawHour); err == nil {
+			injectNumericFact(env, "current_hour", h)
 			if h >= businessHoursStart && h < businessHoursEnd {
 				env.Metadata["business_hours"] = "true"
 			}

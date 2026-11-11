@@ -27,11 +27,19 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"runtime"
 
 	"github.com/duynguyendang/manglekit"
+	function "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 )
+
+func exampleDir() string {
+	_, filename, _, _ := runtime.Caller(0)
+	return filepath.Dir(filename)
+}
 
 type Case struct {
 	Name     string
@@ -141,7 +149,50 @@ func main() {
 		fmt.Println("Some cases FAILED.")
 		os.Exit(1)
 	}
-	fmt.Println("All cases passed.")
+
+	// --- Section 2: Machine-Readable ProofBundle & Pluggable AuditSink ---
+	fmt.Println("--- Section 2: Machine-Readable ProofBundle & Pluggable AuditSink ---")
+	var capturedRecords []core.AuditRecord
+	auditSink := core.AuditSinkFunc(func(ctx context.Context, rec core.AuditRecord) error {
+		capturedRecords = append(capturedRecords, rec)
+		return nil
+	})
+
+	complianceClient, err := sdk.NewClient(ctx,
+		sdk.WithPolicyPath(filepath.Join(exampleDir(), "gdpr_policy.mg")),
+		sdk.WithAuditSink(auditSink),
+	)
+	if err != nil {
+		log.Fatalf("failed to init compliance client: %v", err)
+	}
+	defer complianceClient.Shutdown(ctx)
+
+	complianceClient.RegisterSupervised("process_data", function.New("process_data",
+		func(ctx context.Context, in map[string]string) (string, error) {
+			return "processed", nil
+		}))
+
+	// Execute an operation with special-category data (blocked by Art.9 T0 axiom)
+	reqEnv := core.NewEnvelope(map[string]string{"type": "health_record"})
+	reqEnv.SecurityLabels = []string{"special"}
+	_, err = complianceClient.ExecuteByName(ctx, "process_data", reqEnv)
+	if err != nil {
+		fmt.Printf("  Supervised action blocked as expected: %v\n", err)
+	}
+
+	if len(capturedRecords) > 0 {
+		rec := capturedRecords[0]
+		fmt.Printf("  AuditSink captured record: phase=%s, outcome=%s, tier=%s\n", rec.Phase, rec.Outcome, rec.Tier)
+		if rec.ProofBundle != nil {
+			jsonBytes, err := rec.ProofBundle.ToJSON()
+			if err == nil {
+				fmt.Println("  Deterministic ProofBundle JSON export for regulators:")
+				fmt.Printf("  %s\n", string(jsonBytes))
+			}
+		}
+	}
+
+	fmt.Println("\nAll cases passed.")
 }
 
 // renderProof converts an AuditTrail into a human-readable proof string

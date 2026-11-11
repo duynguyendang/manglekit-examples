@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
+	function "github.com/duynguyendang/manglekit/adapters/func"
 	"github.com/duynguyendang/manglekit/core"
 	"github.com/duynguyendang/manglekit/sdk"
 )
@@ -124,5 +126,61 @@ func TestArt6WithConsentPermitted(t *testing.T) {
 	}
 	if decision.Outcome != core.DecisionProceed {
 		t.Errorf("expected proceed with consent, got %s", decision.Outcome)
+	}
+}
+
+func TestComplianceProofBundleAndAuditSink(t *testing.T) {
+	ctx := context.Background()
+	var captured []core.AuditRecord
+	sink := core.AuditSinkFunc(func(_ context.Context, rec core.AuditRecord) error {
+		captured = append(captured, rec)
+		return nil
+	})
+
+	client, err := sdk.NewClient(ctx,
+		sdk.WithPolicyPath(filepath.Join(exampleDir(), "gdpr_policy.mg")),
+		sdk.WithAuditSink(sink),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Shutdown(ctx)
+
+	client.RegisterSupervised("process_data", function.New("process_data",
+		func(ctx context.Context, in map[string]string) (string, error) {
+			return "processed", nil
+		}))
+
+	env := core.NewEnvelope(map[string]string{"type": "health_record"})
+	env.SecurityLabels = []string{"special"}
+
+	_, err = client.ExecuteByName(ctx, "process_data", env)
+	if err == nil {
+		t.Fatal("expected policy violation error for Art.9 special data")
+	}
+
+	if len(captured) == 0 {
+		t.Fatal("expected audit sink to receive at least one record")
+	}
+
+	rec := captured[0]
+	if rec.Phase != core.PhasePreCheck {
+		t.Errorf("expected phase pre-check, got %s", rec.Phase)
+	}
+	if rec.Outcome != core.AuditOutcomeHalt {
+		t.Errorf("expected outcome HALT, got %s", rec.Outcome)
+	}
+	if rec.Tier != "T0" {
+		t.Errorf("expected tier T0 for Art.9 violation, got %s", rec.Tier)
+	}
+	if rec.ProofBundle == nil {
+		t.Fatal("expected ProofBundle attached to audit record")
+	}
+	jsonBytes, err := rec.ProofBundle.ToJSON()
+	if err != nil {
+		t.Fatalf("failed to serialize ProofBundle to JSON: %v", err)
+	}
+	if len(jsonBytes) == 0 {
+		t.Error("expected non-empty JSON bytes")
 	}
 }

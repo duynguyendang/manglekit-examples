@@ -1,0 +1,44 @@
+policy: "security_gate.mg"
+tests:
+  - name: "disallow scale over limit (>10)"
+    action: "kubectl_scale"
+    query: 'halt("Req", Reason)'
+    facts:
+      - 'target_replicas(20).'
+    expect: "halt"
+
+  - name: "disallow scale zero replicas (<1)"
+    action: "kubectl_scale"
+    query: 'halt("Req", Reason)'
+    facts:
+      - 'target_replicas(0).'
+    expect: "halt"
+
+  - name: "allow scale within limits (1-10)"
+    action: "kubectl_scale"
+    query: 'halt("Req", Reason)'
+    facts:
+      - 'target_replicas(5).'
+    expect: "allow"
+
+  - name: "disallow open security group"
+    action: "terraform_apply"
+    query: 'halt("Req", Reason)'
+    facts:
+      - 'meta("has_open_security_group", "true").'
+    expect: "halt"
+
+  - name: "disallow destroy during business hours (14:00 UTC)"
+    action: "terraform_destroy"
+    query: 'halt("Req", Reason)'
+    facts:
+      - 'current_hour(14).'
+    expect: "halt"
+
+  - name: "allow destroy outside business hours (21:00 UTC) with approval"
+    action: "terraform_destroy"
+    query: 'halt("Req", Reason)'
+    facts:
+      - 'current_hour(21).'
+      - 'meta("has_approval", "true").'
+    expect: "allow"
